@@ -439,8 +439,8 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
             arrow_elements.append(label_elem)
             arrow["boundElements"].append({"id": label_id, "type": "text"})
 
-    # Z-order: arrows behind shapes — existing elements, then arrows, then shapes+text on top
-    data["elements"] = elements + arrow_elements + shape_elements
+    # Element order: shapes MUST come before arrows (plugin hangs otherwise)
+    data["elements"] = elements + shape_elements + arrow_elements
     path.write_text(json.dumps(data, indent="\t"))
 
     return f"OK: laid out {len(nodes)} nodes + {len(edges)} edges (engine={engine}, direction={direction})"
