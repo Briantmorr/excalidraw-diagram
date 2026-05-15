@@ -156,79 +156,119 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
         h = spec["height"]
         idx = base_idx + str(i)
 
-        shape = {
-            **ELEMENT_DEFAULTS,
-            "type": etype,
-            "id": eid,
-            "x": x,
-            "y": y,
-            "width": w,
-            "height": h,
-            "strokeColor": spec["stroke"],
-            "backgroundColor": spec["bg"],
-            "seed": gen_seed(),
-            "version": 1,
-            "versionNonce": gen_nonce(),
-            "index": idx,
-            "updated": now,
-        }
-
-        if etype in ("rectangle", "diamond"):
-            shape["roundness"] = {"type": 3}
-
-        elements.append(shape)
-
-        # Add text label if specified
-        text = spec.get("text")
-        if text:
-            text_size = spec.get("text_size", 14)
+        if etype == "text":
+            text = spec.get("text", "")
+            text_size = spec.get("text_size", 16)
             estimated_width = len(text) * text_size * 0.55
-            text_id = f"{eid}_text"
+            text_height = text_size * 1.25
             text_elem = {
                 **ELEMENT_DEFAULTS,
                 "type": "text",
-                "id": text_id,
-                "x": x + (w - estimated_width) / 2,
-                "y": y + (h - text_size * 1.25) / 2,
+                "id": eid,
+                "x": x,
+                "y": y,
                 "width": estimated_width,
-                "height": text_size * 1.25,
+                "height": text_height,
                 "text": text,
                 "originalText": text,
                 "rawText": text,
                 "fontSize": text_size,
                 "fontFamily": 1,
-                "textAlign": "center",
-                "verticalAlign": "middle",
-                "strokeColor": "#0a0a0a",
+                "textAlign": "left",
+                "verticalAlign": "top",
+                "strokeColor": spec.get("stroke", "#0a0a0a"),
                 "backgroundColor": "transparent",
                 "strokeWidth": 1,
                 "roughness": 0,
                 "seed": gen_seed(),
                 "version": 1,
                 "versionNonce": gen_nonce(),
-                "index": idx + "t",
+                "index": idx,
                 "updated": now,
-                "containerId": eid,
+                "containerId": None,
                 "lineHeight": 1.25,
                 "autoResize": True,
             }
             elements.append(text_elem)
+        else:
+            shape = {
+                **ELEMENT_DEFAULTS,
+                "type": etype,
+                "id": eid,
+                "x": x,
+                "y": y,
+                "width": w,
+                "height": h,
+                "strokeColor": spec["stroke"],
+                "backgroundColor": spec["bg"],
+                "seed": gen_seed(),
+                "version": 1,
+                "versionNonce": gen_nonce(),
+                "index": idx,
+                "updated": now,
+            }
 
-            # Bind text to shape
-            shape["boundElements"] = [{"id": text_id, "type": "text"}]
+            if etype in ("rectangle", "diamond"):
+                shape["roundness"] = {"type": 3}
+
+            elements.append(shape)
+
+            text = spec.get("text")
+            if text:
+                text_size = spec.get("text_size", 14)
+                estimated_width = len(text) * text_size * 0.55
+                text_id = f"{eid}_text"
+                text_elem = {
+                    **ELEMENT_DEFAULTS,
+                    "type": "text",
+                    "id": text_id,
+                    "x": x + (w - estimated_width) / 2,
+                    "y": y + (h - text_size * 1.25) / 2,
+                    "width": estimated_width,
+                    "height": text_size * 1.25,
+                    "text": text,
+                    "originalText": text,
+                    "rawText": text,
+                    "fontSize": text_size,
+                    "fontFamily": 1,
+                    "textAlign": "center",
+                    "verticalAlign": "middle",
+                    "strokeColor": "#0a0a0a",
+                    "backgroundColor": "transparent",
+                    "strokeWidth": 1,
+                    "roughness": 0,
+                    "seed": gen_seed(),
+                    "version": 1,
+                    "versionNonce": gen_nonce(),
+                    "index": idx + "t",
+                    "updated": now,
+                    "containerId": eid,
+                    "lineHeight": 1.25,
+                    "autoResize": True,
+                }
+                elements.append(text_elem)
+                shape["boundElements"] = [{"id": text_id, "type": "text"}]
 
         added_ids.append(eid)
 
     data["elements"] = elements
+    if "files" not in data:
+        data["files"] = {}
+    if "appState" not in data:
+        data["appState"] = {}
+    data["appState"].setdefault("gridSize", None)
+    data["appState"].setdefault("viewBackgroundColor", "#ffffff")
+    data["source"] = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
     path.write_text(json.dumps(data, indent="\t"))
 
     # Post-placement collision check
+    abs_filepath = str(path.resolve())
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     from check_collision import check_collisions
 
     warnings = []
     for eid in added_ids:
-        result = check_collisions(filepath, eid)
+        result = check_collisions(abs_filepath, eid)
         if "OK" not in result:
             warnings.append(f"  {eid}: {result}")
 

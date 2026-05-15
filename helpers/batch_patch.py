@@ -110,6 +110,15 @@ def batch_patch(filepath: str, patch_list: list[dict]) -> str:
                 target["originalText"] = val
                 if "rawText" in target:
                     target["rawText"] = val
+                # Recalculate width/height for text elements
+                if target.get("type") == "text":
+                    font_size = target.get("fontSize", 14)
+                    line_height = target.get("lineHeight", 1.25)
+                    lines = val.split("\n")
+                    num_lines = len(lines)
+                    target["height"] = num_lines * font_size * line_height
+                    longest_line = max(lines, key=len)
+                    target["width"] = len(longest_line) * font_size * 0.55
             else:
                 target[key] = val
 

@@ -203,8 +203,10 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
     if path.exists():
         data = json.loads(path.read_text())
     else:
-        data = {"type": "excalidraw", "version": 2, "source": "layout_graph",
-                "elements": [], "appState": {"gridSize": None}}
+        data = {"type": "excalidraw", "version": 2,
+                "source": "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3",
+                "elements": [], "files": {},
+                "appState": {"gridSize": None, "viewBackgroundColor": "#ffffff"}}
 
     nodes = spec.get("nodes", [])
     edges = spec.get("edges", [])
@@ -376,13 +378,14 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
             "backgroundColor": "transparent",
             "strokeWidth": 2,
             "points": [[0, 0], [dx, dy]],
-            "startBinding": {"elementId": src_id, "focus": 0, "gap": 4, "fixedPoint": start_fp},
-            "endBinding": {"elementId": tgt_id, "focus": 0, "gap": 4, "fixedPoint": end_fp},
+            "startBinding": {"mode": "orbit", "elementId": src_id, "fixedPoint": start_fp},
+            "endBinding": {"mode": "orbit", "elementId": tgt_id, "fixedPoint": end_fp},
             "startArrowhead": None,
             "endArrowhead": "arrow",
             "elbowed": False,
+            "hasTextLink": False,
             "seed": gen_seed(),
-            "version": 1,
+            "version": 2,
             "versionNonce": gen_nonce(),
             "index": idx,
             "updated": now,
@@ -441,6 +444,9 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
 
     # Element order: shapes MUST come before arrows (plugin hangs otherwise)
     data["elements"] = elements + shape_elements + arrow_elements
+    if "files" not in data:
+        data["files"] = {}
+    data["source"] = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
     path.write_text(json.dumps(data, indent="\t"))
 
     return f"OK: laid out {len(nodes)} nodes + {len(edges)} edges (engine={engine}, direction={direction})"

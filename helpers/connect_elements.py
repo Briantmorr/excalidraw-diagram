@@ -50,7 +50,6 @@ def connect_elements(
     label: str | None = None,
     style: str = "solid",
     stroke_width: int = 2,
-    elbowed: bool = False,
 ) -> str:
     path = Path(filepath)
     data = json.loads(path.read_text())
@@ -66,11 +65,19 @@ def connect_elements(
     src = by_id[from_id]
     tgt = by_id[to_id]
 
-    sx, sy = center(src)
-    tx, ty = center(tgt)
-    dx, dy = tx - sx, ty - sy
-
     start_fp, end_fp = compute_fixed_points(src, tgt)
+
+    src_w = src.get("width", 0)
+    src_h = src.get("height", 0)
+    tgt_w = tgt.get("width", 0)
+    tgt_h = tgt.get("height", 0)
+
+    arrow_sx = src["x"] + start_fp[0] * src_w
+    arrow_sy = src["y"] + start_fp[1] * src_h
+    arrow_ex = tgt["x"] + end_fp[0] * tgt_w
+    arrow_ey = tgt["y"] + end_fp[1] * tgt_h
+    dx = arrow_ex - arrow_sx
+    dy = arrow_ey - arrow_sy
 
     arrow_id = f"arrow_{from_id}_{to_id}"
     if arrow_id in by_id:
@@ -82,8 +89,8 @@ def connect_elements(
     arrow: dict = {
         "type": "arrow",
         "id": arrow_id,
-        "x": sx,
-        "y": sy,
+        "x": arrow_sx,
+        "y": arrow_sy,
         "width": abs(dx),
         "height": abs(dy),
         "strokeColor": "#3a3428",
@@ -95,13 +102,14 @@ def connect_elements(
         "opacity": 100,
         "angle": 0,
         "points": [[0, 0], [dx, dy]],
-        "startBinding": {"elementId": from_id, "focus": 0, "gap": 2, "fixedPoint": start_fp},
-        "endBinding": {"elementId": to_id, "focus": 0, "gap": 2, "fixedPoint": end_fp},
+        "startBinding": {"mode": "orbit", "elementId": from_id, "fixedPoint": start_fp},
+        "endBinding": {"mode": "orbit", "elementId": to_id, "fixedPoint": end_fp},
         "startArrowhead": None,
         "endArrowhead": "arrow",
-        "elbowed": elbowed,
+        "elbowed": False,
+        "hasTextLink": False,
         "seed": gen_seed(),
-        "version": 1,
+        "version": 2,
         "versionNonce": gen_nonce(),
         "isDeleted": False,
         "groupIds": [],
@@ -126,8 +134,8 @@ def connect_elements(
 
     # Optional label text bound to the arrow
     if label:
-        mid_x = sx + dx / 2
-        mid_y = sy + dy / 2
+        mid_x = arrow_sx + dx / 2
+        mid_y = arrow_sy + dy / 2
         font_size = 14
         estimated_w = len(label) * font_size * 0.55
         label_h = font_size * 1.25
@@ -156,6 +164,7 @@ def connect_elements(
             "roughness": 0,
             "opacity": 100,
             "angle": 0,
+            "hasTextLink": False,
             "seed": gen_seed(),
             "version": 1,
             "versionNonce": gen_nonce(),
@@ -174,10 +183,12 @@ def connect_elements(
         }
         elements.append(label_elem)
 
-        # Register the label as a bound element on the arrow
         arrow["boundElements"].append({"id": label_id, "type": "text"})
 
     data["elements"] = elements
+    if "files" not in data:
+        data["files"] = {}
+    data["source"] = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
     path.write_text(json.dumps(data, indent=2))
     return f"OK: connected {from_id} -> {to_id}"
 
@@ -190,7 +201,6 @@ def main() -> None:
     parser.add_argument("--label", default=None, help="Text label on the arrow")
     parser.add_argument("--style", default="solid", choices=["solid", "dashed"], help="Stroke style")
     parser.add_argument("--stroke-width", type=int, default=2, choices=[1, 2, 3], help="Stroke width")
-    parser.add_argument("--elbowed", action="store_true", help="Use elbowed (orthogonal) arrow routing")
 
     args = parser.parse_args()
     result = connect_elements(
@@ -200,7 +210,6 @@ def main() -> None:
         label=args.label,
         style=args.style,
         stroke_width=args.stroke_width,
-        elbowed=args.elbowed,
     )
     print(result)
 
