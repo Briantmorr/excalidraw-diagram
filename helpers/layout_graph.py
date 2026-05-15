@@ -274,7 +274,7 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
     for nid in [n["id"] for n in nodes]:
         info = node_map[nid]
         x, y = final_positions[nid]
-        idx = base_idx + str(idx_counter)
+        idx = base_idx + str(idx_counter).zfill(2)
         idx_counter += 1
 
         shape = {
@@ -363,7 +363,7 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
         dx = arrow_ex - arrow_sx
         dy = arrow_ey - arrow_sy
 
-        idx = base_idx + str(idx_counter)
+        idx = base_idx + str(idx_counter).zfill(2)
         idx_counter += 1
 
         arrow = {

@@ -154,7 +154,7 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
         y = spec.get("y", 0)
         w = spec["width"]
         h = spec["height"]
-        idx = base_idx + str(i)
+        idx = base_idx + str(i).zfill(2)
 
         if etype == "text":
             text = spec.get("text", "")
