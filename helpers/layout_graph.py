@@ -206,7 +206,11 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
         data = {"type": "excalidraw", "version": 2,
                 "source": "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3",
                 "elements": [], "files": {},
-                "appState": {"gridSize": None, "viewBackgroundColor": "#ffffff"}}
+                "appState": {
+                    "gridSize": None,
+                    "viewBackgroundColor": "#ffffff",
+                    "isBindingEnabled": True,
+                }}
 
     nodes = spec.get("nodes", [])
     edges = spec.get("edges", [])
@@ -446,6 +450,11 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
     data["elements"] = elements + shape_elements + arrow_elements
     if "files" not in data:
         data["files"] = {}
+    if "appState" not in data:
+        data["appState"] = {}
+    data["appState"].setdefault("gridSize", None)
+    data["appState"].setdefault("viewBackgroundColor", "#ffffff")
+    data["appState"].setdefault("isBindingEnabled", True)
     data["source"] = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
     path.write_text(json.dumps(data, indent="\t"))
 
