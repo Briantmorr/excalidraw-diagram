@@ -219,7 +219,6 @@ def main() -> None:
         result = patch(args.file, [PatchSpec.from_dict(raw)])
     else:
         p.error("provide JSON patches, --id, or --remove")
-        return
 
     print(result.summary())
     sys.exit(0 if result.ok else 1)

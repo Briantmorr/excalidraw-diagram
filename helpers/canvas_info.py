@@ -2,9 +2,13 @@
 """Summarize an excalidraw canvas: element IDs, types, positions, sizes, text previews."""
 
 import json
+import os
 import sys
 import argparse
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.excalidraw_core import get_frame_ids
 
 
 def _element_center(e: dict) -> tuple[float, float]:
@@ -15,23 +19,6 @@ def _point_in_bounds(px: float, py: float, shape: dict) -> bool:
     sx, sy = shape["x"], shape["y"]
     sw, sh = shape.get("width", 0), shape.get("height", 0)
     return sx <= px <= sx + sw and sy <= py <= sy + sh
-
-
-def _is_frame(e: dict, all_elements: list[dict]) -> bool:
-    if e["type"] != "rectangle":
-        return False
-    bg = e.get("backgroundColor", "transparent")
-    if bg != "transparent" and bg:
-        return False
-    ex, ey = e["x"], e["y"]
-    ew, eh = e.get("width", 0), e.get("height", 0)
-    enclosed = 0
-    shapes = [el for el in all_elements if el["id"] != e["id"] and el["type"] != "text"]
-    for s in shapes:
-        cx, cy = _element_center(s)
-        if ex <= cx <= ex + ew and ey <= cy <= ey + eh:
-            enclosed += 1
-    return enclosed >= len(shapes) * 0.6 if shapes else False
 
 
 def summarize(filepath: str) -> str:
@@ -119,6 +106,8 @@ def summarize_compact(filepath: str) -> str:
 
     grouped_text_ids = set(text_to_shape.keys())
 
+    frame_ids = get_frame_ids(elements)
+
     for e in shapes:
         eid = e["id"]
         etype = e["type"]
@@ -126,8 +115,8 @@ def summarize_compact(filepath: str) -> str:
         w = e.get("width", 0)
         h = e.get("height", 0)
 
-        # Detect frames
-        is_frame = _is_frame(e, elements)
+        # Detect frames (canonical: canvas_utils / core.detect_frames)
+        is_frame = eid in frame_ids
 
         if etype == "arrow" or etype == "line":
             # Arrow format: id  arrow (x1,y1) -> (x2,y2)

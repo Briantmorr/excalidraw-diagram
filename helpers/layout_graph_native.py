@@ -16,9 +16,13 @@ Usage:
 
 import json
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.excalidraw_core import BORDER_COLOR
 
 from skeleton_to_elements import convert_skeleton
 
@@ -58,7 +62,7 @@ def _normalize_native_elements(elements: list[dict]) -> list[dict]:
         elif t in ("rectangle", "ellipse", "diamond", "line"):
             sc = el.get("strokeColor")
             if not sc or sc == "#1e1e1e":
-                el["strokeColor"] = "#000000"
+                el["strokeColor"] = BORDER_COLOR
 
     # Stable partition: non-arrows first, arrows last, preserving relative order.
     non_arrows = [e for e in elements if e.get("type") != "arrow"]
@@ -149,7 +153,7 @@ def build_skeleton(node_map: dict, positions: dict, edges: list, origin_x: float
             elem["backgroundColor"] = info["bg"]
         # Always pin strokeColor — Excalidraw's default ('#1e1e1e') violates the
         # "all shape borders #000000" invariant.
-        elem["strokeColor"] = info.get("stroke") or "#000000"
+        elem["strokeColor"] = info.get("stroke") or BORDER_COLOR
         if info["text"]:
             elem["label"] = {"text": info["text"]}
         skeleton.append(elem)

@@ -159,7 +159,7 @@ def _path_clear(pts: list[tuple[float, float]], obstacles: list[dict], exclude: 
 
 def _elbow_path(
     start: tuple[float, float], end: tuple[float, float],
-    start_side: Side, end_side: Side,
+    start_side: Side,
     obstacles: list[dict], exclude: set[str],
 ) -> list[tuple[float, float]] | None:
     sx, sy = start
@@ -301,7 +301,7 @@ def connect(filepath: Path, specs: list[ConnectSpec]) -> ConnectResult:
             continue
 
         sx, sy, sside = compute_edge_point(src, tgt, spec.start_side, is_source=True)
-        ex, ey, eside = compute_edge_point(src, tgt, spec.end_side, is_source=False)
+        ex, ey, _ = compute_edge_point(src, tgt, spec.end_side, is_source=False)
         start, end = (sx, sy), (ex, ey)
         exclude = {spec.from_id, spec.to_id}
 
@@ -309,7 +309,7 @@ def connect(filepath: Path, specs: list[ConnectSpec]) -> ConnectResult:
         points: list[tuple[float, float]] = [start, end]
         needs_elbow = spec.force_elbow or bool(detect_crossing(start, end, elements, exclude))
         if needs_elbow:
-            path_pts = _elbow_path(start, end, sside, eside, elements, exclude)
+            path_pts = _elbow_path(start, end, sside, elements, exclude)
             if path_pts:
                 points = path_pts
                 elbowed = True

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# excd — dispatcher shim for the excalidraw-diagram skill.
+set -euo pipefail
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  if [[ "$TARGET" = /* ]]; then SOURCE="$TARGET"; else SOURCE="$(dirname "$SOURCE")/$TARGET"; fi
+done
+HERE="$(cd "$(dirname "$SOURCE")" && pwd)"
+exec python3 "$HERE/helpers/cli.py" "$@"

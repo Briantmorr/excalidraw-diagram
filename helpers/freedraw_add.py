@@ -13,10 +13,13 @@ Points are LOCAL coordinates relative to (x, y). The first point should be [0,0]
 
 import json
 import argparse
-import random
+import os
 import time
 import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.excalidraw_core import gen_nonce, gen_seed
 
 
 FREEDRAW_DEFAULTS = {
@@ -36,14 +39,6 @@ FREEDRAW_DEFAULTS = {
     "simulatePressure": True,
     "pressures": [],
 }
-
-
-def gen_seed() -> int:
-    return random.randint(100000, 9999999)
-
-
-def gen_nonce() -> int:
-    return random.randint(100000000, 2147483647)
 
 
 def compute_bounds(points: list[list[float]]) -> tuple[float, float]:

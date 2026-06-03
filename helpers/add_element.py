@@ -1,49 +1,25 @@
 #!/usr/bin/env python3
 """Add a new element to an existing excalidraw canvas."""
 
+from __future__ import annotations
+
 import json
 import argparse
-import random
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from canvas_utils import get_element_bounds, detect_frames, get_canvas_bounds
-
-
-SHAPE_DEFAULTS = {
-    "fillStyle": "solid",
-    "strokeWidth": 2,
-    "strokeStyle": "solid",
-    "roughness": 1,
-    "opacity": 100,
-    "angle": 0,
-    "groupIds": [],
-    "boundElements": [],
-    "link": None,
-    "locked": False,
-    "isDeleted": False,
-    "frameId": None,
-    "roundness": None,
-    "hasTextLink": False,
-}
-
-# Backwards-compat alias — older callers reference ELEMENT_DEFAULTS.
-ELEMENT_DEFAULTS = SHAPE_DEFAULTS
-
-TEXT_DEFAULTS = {
-    **SHAPE_DEFAULTS,
-    "fontFamily": 1,
-}
-
-
-def gen_seed():
-    return random.randint(100000, 9999999)
-
-
-def gen_nonce():
-    return random.randint(100000000, 2147483647)
+from core.excalidraw_core import (
+    SHAPE_DEFAULTS,
+    TEXT_DEFAULTS,
+    detect_frames,
+    gen_nonce,
+    gen_seed,
+    get_element_bounds,
+    text_height,
+    text_width,
+)
 
 
 def bounds_overlap(ax, ay, ax2, ay2, bx, by, bx2, by2):
@@ -103,7 +79,8 @@ def fits_in_frame(x, y, width, height, frame_bounds):
             and x + width <= frame_bounds["x2"] and y + height <= frame_bounds["y2"])
 
 
-def find_placement(elements, near_id, direction="right", gap=40, new_width=160, new_height=160):
+def find_placement(elements, near_id, direction="right", gap: float = 40,
+                   new_width: float = 160, new_height: float = 160):
     target = None
     for e in elements:
         if e["id"] == near_id:
@@ -182,9 +159,9 @@ def resolve_like(elements: list, like_id: str) -> dict:
 def add_element(filepath: str, element_type: str, element_id: str,
                 x: float, y: float, width: float, height: float,
                 bg: str = "transparent", stroke: str = "#000000",
-                text: str = None, text_size: int = 14,
-                near_id: str = None, direction: str = "right", gap: float = 40,
-                like_id: str = None) -> str:
+                text: str | None = None, text_size: int = 14,
+                near_id: str | None = None, direction: str = "right",
+                gap: float = 40, like_id: str | None = None) -> str:
     path = Path(filepath)
     data = json.loads(path.read_text())
     elements = data.get("elements", [])
@@ -217,10 +194,10 @@ def add_element(filepath: str, element_type: str, element_id: str,
     # Compute placement if --near specified
     if near_id:
         computed_x, computed_y = find_placement(elements, near_id, direction, gap, width, height)
-        if computed_x is None:
+        if computed_x is None or computed_y is None:
             return f"ERROR: near element '{near_id}' not found"
-        x = computed_x
-        y = computed_y
+        x = float(computed_x)
+        y = float(computed_y)
 
     # Determine next index
     indices = [e.get("index", "") for e in elements if e.get("index")]
@@ -259,18 +236,18 @@ def add_element(filepath: str, element_type: str, element_id: str,
         text = text.replace("\\n", "\n")
         num_lines = text.count("\n") + 1
         longest_line = max(text.split("\n"), key=len)
-        text_width = len(longest_line) * text_size * 0.55
-        text_height = num_lines * text_size * 1.25
+        tw = text_width(longest_line, text_size)
+        th = text_height(num_lines, text_size)
         text_id = f"{element_id}_text"
 
         text_elem = {
             **TEXT_DEFAULTS,
             "type": "text",
             "id": text_id,
-            "x": x + (width - text_width) / 2,
-            "y": y + (height - text_height) / 2,
-            "width": text_width,
-            "height": text_height,
+            "x": x + (width - tw) / 2,
+            "y": y + (height - th) / 2,
+            "width": tw,
+            "height": th,
             "text": text,
             "originalText": text,
             "rawText": text,
@@ -335,7 +312,7 @@ def main():
         args.x, args.y, args.width, args.height,
         args.bg, args.stroke, args.text, args.text_size,
         args.near, args.direction, args.gap,
-        like_id=getattr(args, "like", None)
+        like_id=getattr(args, "like", None),
     )
     print(result)
 

@@ -65,7 +65,6 @@ class Bridge:
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=True)
         self._page: Page = self._browser.new_page()
-        self._page.on("console", lambda msg: None)
         self._page.set_content(HTML_TEMPLATE)
         self._page.wait_for_function(
             "window.__ready === true || window.__error", timeout=30000

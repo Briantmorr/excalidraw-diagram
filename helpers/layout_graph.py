@@ -3,30 +3,30 @@
 
 import json
 import argparse
-import random
+import os
 import subprocess
 import time
 import sys
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.excalidraw_core import (
+    ARROW_COLOR,
+    DEFAULT_FONT_FAMILY,
+    SHAPE_DEFAULTS,
+    gen_nonce,
+    gen_seed,
+    text_height,
+    text_width,
+)
+
+
 def element_defaults() -> dict:
     """Fresh defaults per element — avoids shared mutable list references."""
-    return {
-        "fillStyle": "solid",
-        "strokeWidth": 2,
-        "strokeStyle": "solid",
-        "roughness": 1,
-        "opacity": 100,
-        "angle": 0,
-        "groupIds": [],
-        "boundElements": [],
-        "link": None,
-        "locked": False,
-        "isDeleted": False,
-        "frameId": None,
-        "roundness": None,
-        "hasTextLink": False,
-    }
+    d = dict(SHAPE_DEFAULTS)
+    d["groupIds"] = []
+    d["boundElements"] = []
+    return d
 
 TYPE_DEFAULTS = {
     "rectangle": (180, 80),
@@ -35,14 +35,6 @@ TYPE_DEFAULTS = {
 }
 
 PX_PER_INCH = 72
-
-
-def gen_seed() -> int:
-    return random.randint(100000, 9999999)
-
-
-def gen_nonce() -> int:
-    return random.randint(100000000, 2147483647)
 
 
 def compute_fixed_point(src_center: tuple, tgt_center: tuple) -> tuple[list[float], list[float]]:
@@ -304,8 +296,8 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
         text = info["text"]
         text_size = 16
         text_id = f"{nid}_text"
-        text_width = len(text) * text_size * 0.55
-        text_height = text_size * 1.25
+        tw = text_width(text, text_size)
+        th = text_height(1, text_size)
 
         shape["boundElements"] = [{"id": text_id, "type": "text"}]
         shape_elements.append(shape)
@@ -314,15 +306,15 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
             **element_defaults(),
             "type": "text",
             "id": text_id,
-            "x": x + (info["width"] - text_width) / 2,
-            "y": y + (info["height"] - text_height) / 2,
-            "width": text_width,
-            "height": text_height,
+            "x": x + (info["width"] - tw) / 2,
+            "y": y + (info["height"] - th) / 2,
+            "width": tw,
+            "height": th,
             "text": text,
             "originalText": text,
             "rawText": text,
             "fontSize": text_size,
-            "fontFamily": 1,
+            "fontFamily": DEFAULT_FONT_FAMILY,
             "textAlign": "center",
             "verticalAlign": "middle",
             "strokeColor": "#0a0a0a",
@@ -378,7 +370,7 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
             "y": arrow_sy,
             "width": abs(dx),
             "height": abs(dy),
-            "strokeColor": "#3a3428",
+            "strokeColor": ARROW_COLOR,
             "backgroundColor": "transparent",
             "strokeWidth": 2,
             "points": [[0, 0], [dx, dy]],
@@ -412,8 +404,8 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
             mid_x = arrow_sx + dx / 2
             mid_y = arrow_sy + dy / 2
             font_size = 14
-            lw = len(label) * font_size * 0.55
-            lh = font_size * 1.25
+            lw = text_width(label, font_size)
+            lh = text_height(1, font_size)
 
             label_elem = {
                 **element_defaults(),
@@ -427,10 +419,10 @@ def layout_graph(filepath: str, spec: dict, engine: str = "dot",
                 "originalText": label,
                 "rawText": label,
                 "fontSize": font_size,
-                "fontFamily": 1,
+                "fontFamily": DEFAULT_FONT_FAMILY,
                 "textAlign": "center",
                 "verticalAlign": "middle",
-                "strokeColor": "#3a3428",
+                "strokeColor": ARROW_COLOR,
                 "backgroundColor": "transparent",
                 "strokeWidth": 1,
                 "roughness": 0,

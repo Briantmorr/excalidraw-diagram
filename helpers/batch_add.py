@@ -1,42 +1,26 @@
 #!/usr/bin/env python3
 """Add multiple elements to an excalidraw canvas in one read/write cycle with auto-spacing."""
 
+from __future__ import annotations
+
 import json
 import argparse
-import random
 import sys
 import os
 import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from canvas_utils import get_element_bounds, get_canvas_bounds
-
-
-SHAPE_DEFAULTS = {
-    "fillStyle": "solid",
-    "strokeWidth": 2,
-    "strokeStyle": "solid",
-    "roughness": 1,
-    "opacity": 100,
-    "angle": 0,
-    "groupIds": [],
-    "boundElements": [],
-    "link": None,
-    "locked": False,
-    "isDeleted": False,
-    "frameId": None,
-    "roundness": None,
-    "hasTextLink": False,
-}
-
-# Backwards-compat alias — older callers reference ELEMENT_DEFAULTS.
-ELEMENT_DEFAULTS = SHAPE_DEFAULTS
-
-TEXT_DEFAULTS = {
-    **SHAPE_DEFAULTS,
-    "fontFamily": 1,
-}
+from core.excalidraw_core import (
+    SHAPE_DEFAULTS,
+    TEXT_DEFAULTS,
+    gen_nonce,
+    gen_seed,
+    get_canvas_bounds,
+    get_element_bounds,
+    text_height,
+    text_width,
+)
 
 
 TYPE_DEFAULTS = {
@@ -46,18 +30,10 @@ TYPE_DEFAULTS = {
 }
 
 
-def gen_seed() -> int:
-    return random.randint(100000, 9999999)
-
-
-def gen_nonce() -> int:
-    return random.randint(100000000, 2147483647)
-
-
 def compute_positions(specs: list[dict], elements: list[dict],
-                      below_id: str = None, row_at: float = None,
-                      gap: float = 30, default_width: float = None,
-                      default_height: float = None) -> list[dict]:
+                      below_id: str | None = None, row_at: float | None = None,
+                      gap: float = 30, default_width: float | None = None,
+                      default_height: float | None = None) -> list[dict]:
     """Compute x/y for each spec that doesn't have explicit coordinates."""
     for spec in specs:
         etype = spec.get("type", "rectangle")
@@ -117,9 +93,10 @@ def compute_positions(specs: list[dict], elements: list[dict],
     return specs
 
 
-def batch_add(filepath: str, specs: list[dict], below_id: str = None,
-              row_at: float = None, gap: float = 30,
-              default_width: float = None, default_height: float = None) -> str:
+def batch_add(filepath: str, specs: list[dict], below_id: str | None = None,
+              row_at: float | None = None, gap: float = 30,
+              default_width: float | None = None,
+              default_height: float | None = None) -> str:
     path = Path(filepath)
     data = json.loads(path.read_text())
     elements = data.get("elements", [])
@@ -179,8 +156,8 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
         if etype == "text":
             text = spec.get("text", "")
             text_size = spec.get("text_size", 16)
-            estimated_width = len(text) * text_size * 0.55
-            text_height = text_size * 1.25
+            estimated_width = text_width(text, text_size)
+            t_height = text_height(1, text_size)
             text_elem = {
                 **TEXT_DEFAULTS,
                 "type": "text",
@@ -188,7 +165,7 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
                 "x": x,
                 "y": y,
                 "width": estimated_width,
-                "height": text_height,
+                "height": t_height,
                 "text": text,
                 "originalText": text,
                 "rawText": text,
@@ -249,16 +226,17 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
             text = spec.get("text")
             if text:
                 text_size = spec.get("text_size", 14)
-                estimated_width = len(text) * text_size * 0.55
+                estimated_width = text_width(text, text_size)
+                t_height = text_height(1, text_size)
                 text_id = f"{eid}_text"
                 text_elem = {
                     **TEXT_DEFAULTS,
                     "type": "text",
                     "id": text_id,
                     "x": x + (w - estimated_width) / 2,
-                    "y": y + (h - text_size * 1.25) / 2,
+                    "y": y + (h - t_height) / 2,
                     "width": estimated_width,
-                    "height": text_size * 1.25,
+                    "height": t_height,
                     "text": text,
                     "originalText": text,
                     "rawText": text,

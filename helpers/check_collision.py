@@ -26,8 +26,9 @@ def overlap_area(a: tuple, b: tuple) -> float:
     return dx * dy
 
 
-def check_collisions(filepath: str, target_id: str = None, threshold: float = 100,
-                     ignore_ids: list = None) -> str:
+def check_collisions(filepath: str, target_id: str | None = None,
+                     threshold: float = 100,
+                     ignore_ids: list | None = None) -> str:
     """Check for collisions. If target_id specified, only check that element against others.
     threshold: minimum overlap area (px²) to report (filters tiny edge touches).
     ignore_ids: element IDs to exclude from checks (e.g., border frames)."""

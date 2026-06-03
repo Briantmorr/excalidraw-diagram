@@ -2,8 +2,12 @@
 """Apply multiple patches to an Excalidraw file in a single read/write cycle."""
 
 import json
+import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from core.excalidraw_core import recenter, text_width
 
 
 PROP_ALIASES = {
@@ -31,47 +35,10 @@ def normalize_patch(raw: dict) -> dict:
     return out
 
 
-def apply_recenter(elements: list, target: dict, old_x: float, old_y: float, old_width: float, old_height: float) -> None:
-    element_id = target["id"]
-    new_x = target.get("x", old_x)
-    new_y = target.get("y", old_y)
-    new_width = target.get("width", old_width)
-    new_height = target.get("height", old_height)
-
-    shape_moved = new_x != old_x or new_y != old_y
-    shape_resized = new_width != old_width or new_height != old_height
-
-    if not (shape_moved or shape_resized):
-        return
-
-    for e in elements:
-        if e["type"] != "text":
-            continue
-
-        if e.get("containerId") == element_id:
-            if shape_resized:
-                text_w = e.get("width", 0)
-                text_h = e.get("height", 0)
-                e["x"] = new_x + (new_width - text_w) / 2
-                e["y"] = new_y + (new_height - text_h) / 2
-            elif shape_moved:
-                e["x"] += new_x - old_x
-                e["y"] += new_y - old_y
-            e["version"] = e.get("version", 1) + 1
-
-        elif e.get("containerId") is None:
-            ex, ey = e["x"], e["y"]
-            ew = e.get("width", 0)
-            eh = e.get("height", 0)
-            text_cx = ex + ew / 2
-            text_cy = ey + eh / 2
-            old_cx = old_x + old_width / 2
-            old_cy = old_y + old_height / 2
-
-            if abs(text_cx - old_cx) < 30 and abs(text_cy - old_cy) < 30:
-                e["x"] = new_x + (new_width - ew) / 2
-                e["y"] = new_y + (new_height - eh) / 2
-                e["version"] = e.get("version", 1) + 1
+def apply_recenter(elements: list, target: dict, old_x: float, old_y: float,
+                   old_width: float, old_height: float) -> None:
+    """Backwards-compat shim — delegates to core.recenter."""
+    recenter(elements, target, old_x, old_y, old_width, old_height)
 
 
 def batch_patch(filepath: str, patch_list: list[dict]) -> str:
@@ -118,7 +85,7 @@ def batch_patch(filepath: str, patch_list: list[dict]) -> str:
                     num_lines = len(lines)
                     target["height"] = num_lines * font_size * line_height
                     longest_line = max(lines, key=len)
-                    target["width"] = len(longest_line) * font_size * 0.55
+                    target["width"] = text_width(longest_line, font_size)
             else:
                 target[key] = val
 
