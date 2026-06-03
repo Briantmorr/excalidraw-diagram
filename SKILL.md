@@ -114,6 +114,20 @@ python3 ~/.claude/skills/excalidraw-diagram/helpers/canvas_info.py <file.excalid
 
 ## Helpers
 
+### When to use which placement helper
+
+| Helper | When | Status |
+|--------|------|--------|
+| **`place/place.py`** | **NEW DIAGRAMS — preferred.** Single declarative tool: each spec carries a `role` (size+style preset) and an `anchor` (`right_of`, `below`, `row`, `spine`, `near`, `like`, or explicit `{x,y}`). Unifies what `batch_add` (`--row-at`, `--below`) and `add_element` (`--near`, `--like`) do today. | preferred |
+| `batch_add.py` | Existing callers; legacy `--row-at` / `--below` flags. | backward-compat shim |
+| `add_element.py` | Existing callers; single-shot `--near` / `--like`. | backward-compat shim |
+
+### place/place.py — declarative placement (preferred for new diagrams)
+```
+python3 .../place/place.py <file> '<json-array>'
+```
+Each spec: `{"id", "type", "text", "role"?, "anchor"?, ...}`. Roles: `stage`, `branch`, `hub`, `spoke`, `annotation`, `title`. Anchors: `{"rel":"right_of"|"below","id":"X","gap":N}`, `{"rel":"row","y":Y,"index":I,"total":T,"gap":N,"width":W,"x_start":X|"center_x":CX}`, `{"rel":"spine","x":X,"y_index":I,"y_start":Y,"gap":N}`, `{"rel":"near","id":"X","direction":...,"gap":N}` (clockwise free-space search), `{"rel":"like","id":"X"}` (copy size+style; supply position separately), or `{"x":X,"y":Y}`. Output preserves shape-before-arrow ordering, monotonic indices, and runs `check_collision` post-place.
+
 ### batch_add.py — add multiple elements in one call
 ```
 python3 .../batch_add.py <file> [--row-at Y] [--below <id>] [--gap N] [--width N] [--height N] '<json>'
