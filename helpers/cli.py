@@ -11,11 +11,7 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _SKILL_ROOT = _HERE.parent
-# When run as `python3 helpers/cli.py`, sys.path[0] is the helpers dir, which
-# shadows stdlib `inspect` with our helpers/inspect.py. Swap in skill root.
-if sys.path and sys.path[0] in (str(_HERE), ""):
-    sys.path[0] = str(_SKILL_ROOT)
-elif str(_SKILL_ROOT) not in sys.path:
+if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
 import argparse  # noqa: E402
@@ -29,7 +25,7 @@ from helpers import render as _render  # noqa: E402
 from helpers import validate as _validate  # noqa: E402
 from helpers.connect import ConnectSpec, connect, connect_batch  # noqa: E402
 from helpers.core import appstate_defaults  # noqa: E402
-from helpers.inspect import summarize  # noqa: E402
+from helpers.canvas_view import summarize  # noqa: E402
 from helpers.layout import GraphSpec, layout_dag  # noqa: E402
 from helpers.patch import PatchSpec, patch, remove  # noqa: E402
 from helpers.place import PlaceSpec, place  # noqa: E402

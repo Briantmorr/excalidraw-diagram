@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.inspect import (
+from helpers.canvas_view import (
     CanvasInfo,
     ElementRecord,
     canvas_info,

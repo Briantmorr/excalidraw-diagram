@@ -13,13 +13,12 @@ Points are LOCAL coordinates relative to (x, y). The first point should be [0,0]
 
 import json
 import argparse
-import os
 import time
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from core.excalidraw_core import gen_nonce, gen_seed
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from core import gen_nonce, gen_seed
 
 
 FREEDRAW_DEFAULTS = {

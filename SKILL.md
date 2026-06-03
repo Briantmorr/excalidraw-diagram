@@ -7,6 +7,7 @@ disallowed-tools:
   - mcp__sap-github__merge_pr
 ---
 
+
 # Excalidraw Diagram
 
 Generate `.excalidraw` files that **argue visually**. Pick a pattern, render, Read the PNG, patch what's wrong. Don't hand-place coordinates unless no pattern fits.

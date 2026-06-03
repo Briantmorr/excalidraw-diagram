@@ -361,13 +361,15 @@ def check_argument(elements: list[dict]) -> list[Finding]:
     ws = [float(s.get("width", 0)) for s in shapes_d]
     hs = [float(s.get("height", 0)) for s in shapes_d]
     w0, h0 = ws[0], hs[0]
-    if w0 > 0 and h0 > 0 and all(
-        abs(w - w0) / w0 <= SIZE_TOLERANCE and abs(h - h0) / h0 <= SIZE_TOLERANCE
-        for w, h in zip(ws, hs)
-    ):
+    # Uniform sizes are intentional for pipelines/cycles/timelines (one-shape-per-sequence).
+    # Only flag when there's no arrow flow AND no size variation — that's the bag-of-rectangles case.
+    if (not arrows
+            and w0 > 0 and h0 > 0
+            and all(abs(w - w0) / w0 <= SIZE_TOLERANCE and abs(h - h0) / h0 <= SIZE_TOLERANCE
+                    for w, h in zip(ws, hs))):
         findings.append(Finding(
             "WARN", "NO_SHAPE_VARIETY",
-            f"all {len(shapes_d)} shapes within {int(SIZE_TOLERANCE*100)}% of {w0:.0f}x{h0:.0f}",
+            f"all {len(shapes_d)} shapes within {int(SIZE_TOLERANCE*100)}% of {w0:.0f}x{h0:.0f} and no arrows",
             tuple(s["id"] for s in shapes_d)))
     return findings
 
