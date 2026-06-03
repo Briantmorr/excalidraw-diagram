@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from canvas_utils import get_element_bounds, detect_frames, get_canvas_bounds
 
 
-ELEMENT_DEFAULTS = {
+SHAPE_DEFAULTS = {
     "fillStyle": "solid",
     "strokeWidth": 2,
     "strokeStyle": "solid",
@@ -27,6 +27,13 @@ ELEMENT_DEFAULTS = {
     "frameId": None,
     "roundness": None,
     "hasTextLink": False,
+}
+
+# Backwards-compat alias — older callers reference ELEMENT_DEFAULTS.
+ELEMENT_DEFAULTS = SHAPE_DEFAULTS
+
+TEXT_DEFAULTS = {
+    **SHAPE_DEFAULTS,
     "fontFamily": 1,
 }
 
@@ -225,7 +232,7 @@ def add_element(filepath: str, element_type: str, element_id: str,
         next_idx = "a0"
 
     shape = {
-        **ELEMENT_DEFAULTS,
+        **SHAPE_DEFAULTS,
         "type": element_type,
         "id": element_id,
         "x": x,
@@ -257,7 +264,7 @@ def add_element(filepath: str, element_type: str, element_id: str,
         text_id = f"{element_id}_text"
 
         text_elem = {
-            **ELEMENT_DEFAULTS,
+            **TEXT_DEFAULTS,
             "type": "text",
             "id": text_id,
             "x": x + (width - text_width) / 2,

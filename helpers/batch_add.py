@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from canvas_utils import get_element_bounds, get_canvas_bounds
 
 
-ELEMENT_DEFAULTS = {
+SHAPE_DEFAULTS = {
     "fillStyle": "solid",
     "strokeWidth": 2,
     "strokeStyle": "solid",
@@ -28,6 +28,13 @@ ELEMENT_DEFAULTS = {
     "frameId": None,
     "roundness": None,
     "hasTextLink": False,
+}
+
+# Backwards-compat alias — older callers reference ELEMENT_DEFAULTS.
+ELEMENT_DEFAULTS = SHAPE_DEFAULTS
+
+TEXT_DEFAULTS = {
+    **SHAPE_DEFAULTS,
     "fontFamily": 1,
 }
 
@@ -175,7 +182,7 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
             estimated_width = len(text) * text_size * 0.55
             text_height = text_size * 1.25
             text_elem = {
-                **ELEMENT_DEFAULTS,
+                **TEXT_DEFAULTS,
                 "type": "text",
                 "id": eid,
                 "x": x,
@@ -205,7 +212,7 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
             elements.append(text_elem)
         else:
             shape = {
-                **ELEMENT_DEFAULTS,
+                **SHAPE_DEFAULTS,
                 "type": etype,
                 "id": eid,
                 "x": x,
@@ -245,7 +252,7 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
                 estimated_width = len(text) * text_size * 0.55
                 text_id = f"{eid}_text"
                 text_elem = {
-                    **ELEMENT_DEFAULTS,
+                    **TEXT_DEFAULTS,
                     "type": "text",
                     "id": text_id,
                     "x": x + (w - estimated_width) / 2,
@@ -284,6 +291,7 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
         data["appState"] = {}
     data["appState"].setdefault("gridSize", None)
     data["appState"].setdefault("viewBackgroundColor", "#ffffff")
+    data["appState"].setdefault("isBindingEnabled", True)
     data["source"] = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
     path.write_text(json.dumps(data, indent="\t"))
 
