@@ -59,9 +59,12 @@ SPINE_TOLERANCE: int = 30
 SPINE_MIN_MEMBERS: int = 3
 
 # Heuristic coefficients derived from v13 gold-set measurements.
-# ratio = bbox_area / (max_shape_area * num_shapes); gold median ~1.3.
+# ratio = bbox_area / (max_shape_area * num_shapes); v13 gold has median ~1.3
+# and max ~3.0 (sparse layouts: timelines, sprint wheels). The "loose"
+# threshold sits ABOVE the gold maximum so tighten is a no-op on every gold
+# diagram; only inputs notably looser than gold are shrunk.
 GOLD_TIGHT_COEFF: float = 1.4   # target shrink-to area when input is loose
-GOLD_LOOSE_COEFF: float = 2.0   # do not shrink at all unless input exceeds this
+GOLD_LOOSE_COEFF: float = 3.5   # do not shrink at all unless input exceeds this
 
 
 @dataclass
@@ -135,21 +138,57 @@ def _move_shape(
     return True
 
 
+def _shapes_overlap(a: dict, b: dict) -> bool:
+    """Strict bbox overlap test for two shapes (no threshold)."""
+    ax1, ay1 = a["x"], a["y"]
+    ax2, ay2 = ax1 + a.get("width", 0), ay1 + a.get("height", 0)
+    bx1, by1 = b["x"], b["y"]
+    bx2, by2 = bx1 + b.get("width", 0), by1 + b.get("height", 0)
+    return ax1 < bx2 and ax2 > bx1 and ay1 < by2 and ay2 > by1
+
+
+def _shape_pair_collisions(shapes: list[dict]) -> set[tuple[str, str]]:
+    """All currently-overlapping shape pairs (sorted-id tuples)."""
+    pairs: set[tuple[str, str]] = set()
+    n = len(shapes)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _shapes_overlap(shapes[i], shapes[j]):
+                a, b = shapes[i]["id"], shapes[j]["id"]
+                pairs.add((a, b) if a < b else (b, a))
+    return pairs
+
+
 def _snap_pass(
     elements: list[dict], shapes: list[dict], grid: int
 ) -> int:
     """Snap every shape's (x, y) to the nearest multiple of `grid`.
 
+    Per-shape collision guard: a snap is only committed if it does not
+    introduce a NEW shape-vs-shape overlap. Existing overlaps in the input
+    are preserved (we never make them worse).
+
     Returns the number of shapes that actually moved.
     """
     if grid <= 0:
         return 0
+    baseline_pairs = _shape_pair_collisions(shapes)
     moved = 0
     for shape in shapes:
         nx = round(shape["x"] / grid) * grid
         ny = round(shape["y"] / grid) * grid
-        if _move_shape(elements, shape, nx, ny):
-            moved += 1
+        if nx == shape["x"] and ny == shape["y"]:
+            continue
+        old_x, old_y = shape["x"], shape["y"]
+        # Tentatively move; if new pairs appear, revert this shape only.
+        if not _move_shape(elements, shape, nx, ny):
+            continue
+        new_pairs = _shape_pair_collisions(shapes)
+        if new_pairs - baseline_pairs:
+            _move_shape(elements, shape, old_x, old_y)
+            continue
+        baseline_pairs = new_pairs
+        moved += 1
     return moved
 
 
@@ -185,12 +224,14 @@ def _cluster_by_center(
 
 
 def _align_to_median(
-    elements: list[dict], cluster: list[dict], axis: str
+    elements: list[dict], cluster: list[dict], axis: str,
+    all_shapes: list[dict],
 ) -> int:
     """Re-align cluster members so their `axis`-center sits on the cluster median.
 
-    Shape sizes are preserved; only x or y is updated. Returns number of shapes
-    actually moved.
+    Shape sizes are preserved; only x or y is updated. Per-shape collision
+    guard: skip any individual move that would introduce a new shape-vs-shape
+    overlap. Returns number of shapes actually moved.
     """
     if axis == "x":
         centers = [s["x"] + s.get("width", 0) / 2 for s in cluster]
@@ -198,6 +239,7 @@ def _align_to_median(
         centers = [s["y"] + s.get("height", 0) / 2 for s in cluster]
     target_center = median(centers)
 
+    baseline_pairs = _shape_pair_collisions(all_shapes)
     moved = 0
     for shape in cluster:
         if axis == "x":
@@ -206,8 +248,15 @@ def _align_to_median(
         else:
             new_x = shape["x"]
             new_y = target_center - shape.get("height", 0) / 2
-        if _move_shape(elements, shape, new_x, new_y):
-            moved += 1
+        old_x, old_y = shape["x"], shape["y"]
+        if not _move_shape(elements, shape, new_x, new_y):
+            continue
+        new_pairs = _shape_pair_collisions(all_shapes)
+        if new_pairs - baseline_pairs:
+            _move_shape(elements, shape, old_x, old_y)
+            continue
+        baseline_pairs = new_pairs
+        moved += 1
     return moved
 
 
@@ -221,7 +270,7 @@ def _spine_pass(
     moved = 0
     for axis in ("x", "y"):
         for cluster in _cluster_by_center(shapes, axis, tol):
-            moved += _align_to_median(elements, cluster, axis)
+            moved += _align_to_median(elements, cluster, axis, shapes)
     return moved
 
 
@@ -249,6 +298,8 @@ def _gap_scale_pass(
     sx, sy <= 1 (we only ever shrink — never grow). After scaling, positions
     are re-snapped to the grid to preserve invariants.
 
+    Per-shape collision guard: if any individual scaled placement would
+    introduce a new shape-vs-shape overlap, that shape is left where it was.
     Returns number of shapes moved.
     """
     if not shapes:
@@ -264,9 +315,9 @@ def _gap_scale_pass(
     if sx >= 1.0 and sy >= 1.0:
         return 0
 
+    baseline_pairs = _shape_pair_collisions(shapes)
     moved = 0
     for shape in shapes:
-        # Distance of shape's top-left from bbox top-left, scaled.
         dx = shape["x"] - x1
         dy = shape["y"] - y1
         new_x = x1 + dx * sx
@@ -274,8 +325,15 @@ def _gap_scale_pass(
         if snap > 0:
             new_x = round(new_x / snap) * snap
             new_y = round(new_y / snap) * snap
-        if _move_shape(elements, shape, new_x, new_y):
-            moved += 1
+        old_x, old_y = shape["x"], shape["y"]
+        if not _move_shape(elements, shape, new_x, new_y):
+            continue
+        new_pairs = _shape_pair_collisions(shapes)
+        if new_pairs - baseline_pairs:
+            _move_shape(elements, shape, old_x, old_y)
+            continue
+        baseline_pairs = new_pairs
+        moved += 1
     return moved
 
 

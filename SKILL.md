@@ -66,10 +66,13 @@ Chain multiple in one bash call with `&&`.
 ```bash
 python3 ~/.claude/skills/excalidraw-diagram/helpers/canvas_info.py <file> --compact
 python3 ~/.claude/skills/excalidraw-diagram/helpers/check_collision.py <file>
+python3 ~/.claude/skills/excalidraw-diagram/helpers/place/tighten.py <file>
 python3 ~/.claude/skills/excalidraw-diagram/helpers/validate/check_argument.py <file>
 python3 ~/.claude/skills/excalidraw-diagram/helpers/validate/check_title.py <file>
 python3 ~/.claude/skills/excalidraw-diagram/helpers/validate/check_hierarchy.py <file>
 ```
+
+Run `place/tighten.py` as the FINAL layout-verification step alongside `check_collision.py`. It grid-snaps shape positions, re-aligns spines (>=3 shapes sharing an x- or y-center) to their cluster median, and shrinks loose canvases toward a gold-derived tight target — reverting any move that would introduce a new shape-vs-shape overlap.
 
 `check_title.py` enforces "every diagram MUST have a title" — fails (`NO_TITLE`) when no free-floating text (fontSize >= 22, top of canvas, not adjacent to a shape) is found, warns on size out of 24-30 (`TITLE_SIZE`), and informs when the title reads as a topic label rather than an action takeaway (`TITLE_PATTERN`).
 
