@@ -68,11 +68,14 @@ python3 ~/.claude/skills/excalidraw-diagram/helpers/canvas_info.py <file> --comp
 python3 ~/.claude/skills/excalidraw-diagram/helpers/check_collision.py <file>
 python3 ~/.claude/skills/excalidraw-diagram/helpers/validate/check_argument.py <file>
 python3 ~/.claude/skills/excalidraw-diagram/helpers/validate/check_title.py <file>
+python3 ~/.claude/skills/excalidraw-diagram/helpers/validate/check_hierarchy.py <file>
 ```
 
 `check_title.py` enforces "every diagram MUST have a title" — fails (`NO_TITLE`) when no free-floating text (fontSize >= 22, top of canvas, not adjacent to a shape) is found, warns on size out of 24-30 (`TITLE_SIZE`), and informs when the title reads as a topic label rather than an action takeaway (`TITLE_PATTERN`).
 
 `check_argument.py` runs the Isomorphism Test — strip text, then warn if shapes are a monoculture with no visible flow (`WEAK_ARGUMENT`) or if every shape is the same size (`NO_SHAPE_VARIETY`). Run it once per diagram; treat warnings as a prompt to redesign for visual variety/flow, not as hard errors.
+
+`check_hierarchy.py` enforces the size-hierarchy rubric (max/min area >= 1.75x across meaningful shapes) and emits `WARN:HIERARCHY_FLAT` with upsize candidates (highest-degree binding hubs first) when too flat. Skips intentional-flat patterns (uniform rows for timelines/storyboards, 2D grids for tables) and segments composites by vertical band so each sub-diagram is checked on its own.
 
 Review the output for:
 - **TEXT_OBSCURED**: A text label is hidden behind a shape. Either move the text outside the shape, remove the label, or reposition overlapping shapes.
