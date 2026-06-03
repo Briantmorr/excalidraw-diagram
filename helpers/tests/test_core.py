@@ -28,8 +28,10 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(s["viewBackgroundColor"], "#ffffff")
 
     def test_rubric_targets_reexport(self) -> None:
-        self.assertEqual(core.RUBRIC_TARGETS["text_bbox_ratio"], 0.62)
-        self.assertIn("pipeline", core.PER_PATTERN)
+        # RUBRIC_TARGETS lives in helpers._rubric_targets; consumers import it directly.
+        from helpers import _rubric_targets as rt
+        self.assertEqual(rt.RUBRIC_TARGETS["text_bbox_ratio"], 0.62)
+        self.assertIn("pipeline", rt.PER_PATTERN)
 
 
 class TestIndices(unittest.TestCase):

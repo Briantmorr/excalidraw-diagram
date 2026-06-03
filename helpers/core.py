@@ -2,15 +2,8 @@ from __future__ import annotations
 
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-
-from helpers._rubric_targets import (
-    DEFAULT_SIZES,
-    PER_PATTERN,
-    RUBRIC_TARGETS,
-    pattern_target,
-)
 
 BORDER_COLOR: str = "#000000"
 ARROW_COLOR: str = "#3a3428"
@@ -129,34 +122,6 @@ class Bounds:
     def cx(self) -> float: return (self.x + self.x2) / 2
     @property
     def cy(self) -> float: return (self.y + self.y2) / 2
-
-
-@dataclass
-class Element:
-    id: str
-    type: str
-    x: float
-    y: float
-    width: float = 0
-    height: float = 0
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "type": self.type, "x": self.x, "y": self.y,
-                "width": self.width, "height": self.height, **self.extra}
-
-
-@dataclass
-class Spec:
-    id: str
-    role: str
-    text: str = ""
-    x: float = 0
-    y: float = 0
-    width: float | None = None
-    height: float | None = None
-    bg: str | None = None
-    shape: str | None = None
 
 
 def gen_seed() -> int:

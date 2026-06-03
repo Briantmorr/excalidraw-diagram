@@ -26,7 +26,7 @@ from helpers._rubric_targets import (  # noqa: E402
     DEFAULT_SIZES, PER_PATTERN, RUBRIC_TARGETS, pattern_target,
 )
 from helpers.connect import ConnectResult, ConnectSpec, connect  # noqa: E402
-from helpers.core import PALETTE, ROLE_PRESETS, TEXT_BBOX_RATIO, text_width  # noqa: E402
+from helpers.core import PALETTE, ROLE_PRESETS, text_width  # noqa: E402
 from helpers.place import Explicit, PlaceResult, PlaceSpec, Role, Row, place  # noqa: E402
 
 TEXT_RATIO: float = RUBRIC_TARGETS["text_bbox_ratio"]

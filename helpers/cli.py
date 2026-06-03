@@ -16,7 +16,6 @@ if str(_SKILL_ROOT) not in sys.path:
 
 import argparse  # noqa: E402
 import json  # noqa: E402
-import time  # noqa: E402
 from dataclasses import asdict  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -331,7 +330,6 @@ def _cmd_bench(args: argparse.Namespace) -> int:
     for f in files:
         entry: dict[str, Any] = {"file": f.name}
         try:
-            t0 = time.perf_counter()
             png_out = f.with_suffix(".bench.png")
             res = _render.render(f, png_out, format="png", scale=2.0)
             entry["render_ms"] = round(res.latency_ms, 1)

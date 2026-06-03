@@ -36,25 +36,6 @@ def _read_excalidraw(path: Path) -> tuple[list[dict], dict, dict]:
     return elements, appstate, files
 
 
-def render_png(
-    input_path: Path,
-    output_path: Path,
-    *,
-    scale: float = 2.0,
-    padding: int = 16,
-) -> RenderResult:
-    return _render(input_path, output_path, format="png", scale=scale, padding=padding)
-
-
-def render_svg(
-    input_path: Path,
-    output_path: Path,
-    *,
-    padding: int = 16,
-) -> RenderResult:
-    return _render(input_path, output_path, format="svg", scale=1.0, padding=padding)
-
-
 def render(
     input_path: Path,
     output_path: Path,

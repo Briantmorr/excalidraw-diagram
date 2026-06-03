@@ -15,11 +15,11 @@ if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
 from helpers.core import (  # noqa: E402
-    ARROW_COLOR, BG_COLOR, BORDER_COLOR, DEFAULT_FONT_FAMILY,
-    PALETTE, ROLE_PRESETS, SHAPE_DEFAULTS, TEXT_BODY, TEXT_DEFAULTS,
+    BORDER_COLOR, DEFAULT_FONT_FAMILY,
+    ROLE_PRESETS, SHAPE_DEFAULTS, TEXT_BODY, TEXT_DEFAULTS,
     TEXT_SUBORDINATE, Bounds, appstate_defaults, detect_frames, frac_index,
     gen_nonce, gen_seed, get_element_bounds, next_index, now_ms,
-    recenter_text, text_height, text_width,
+    recenter_text, text_height,
 )
 from helpers._rubric_targets import DEFAULT_SIZES  # noqa: E402
 
@@ -407,10 +407,6 @@ def _save(path: Path, data: dict[str, Any]) -> None:
     data.setdefault("files", {})
     data["source"] = SOURCE
     path.write_text(json.dumps(data, indent="\t"))
-
-
-def place_one(filepath: Path, spec: PlaceSpec) -> PlaceResult:
-    return place(filepath, [spec])
 
 
 def place(filepath: Path, specs: list[PlaceSpec]) -> PlaceResult:
