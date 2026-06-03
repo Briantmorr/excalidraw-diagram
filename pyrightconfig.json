@@ -1,8 +1,0 @@
-{
-  "include": ["helpers"],
-  "exclude": ["**/__pycache__", "**/.cache"],
-  "extraPaths": ["."],
-  "pythonVersion": "3.11",
-  "reportMissingImports": "warning",
-  "reportMissingTypeStubs": "none"
-}
