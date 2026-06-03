@@ -1,6 +1,10 @@
 ---
 name: excalidraw-diagram
 description: Create and edit Excalidraw diagrams that argue visually — using batch helpers to eliminate boilerplate while you control all artistic decisions (positions, sizes, colors, visual hierarchy). Use when user wants to create, modify, or compose .excalidraw files.
+disallowed-tools:
+  - Bash(rm -rf*)
+  - Bash(git push*)
+  - mcp__sap-github__merge_pr
 ---
 
 # Excalidraw Diagram
@@ -31,6 +35,7 @@ Before any tool call, complete the full design process. **Spend more time design
 - Multiple shape types within a single cycle or pipeline (pick ONE and reuse it)
 - Diamonds containing multi-word labels (diamonds clip text — use rectangles unless 1-2 short words)
 - Diagonal arrows crossing through unrelated elements (rearrange layout instead)
+- **Cramming multiple concepts into one label** — if a shape's text contains `\n`-separated items that are DIFFERENT things (not a name + subtitle), break them into separate elements
 
 ### 2. Create elements (one or two `batch_add` calls)
 
@@ -64,14 +69,12 @@ python3 ~/.claude/skills/excalidraw-diagram/helpers/check_collision.py <file>
 ```
 
 Review the output for:
+- **TEXT_OBSCURED**: A text label is hidden behind a shape. Either move the text outside the shape, remove the label, or reposition overlapping shapes.
+- **ARROW_TEXT**: Arrow passes through free text. Move text perpendicular to arrow path.
 - **OVERLAP**: Two shapes collide. Fix by adjusting positions.
-- **ARROW_COLLISION**: Arrow passes through unrelated shape. Rearrange layout.
-- **ARROW_TEXT_COLLISION**: Arrow passes through free text. Move text perpendicular to arrow path.
-- **SHORT_ARROW**: Arrow < 30px. Increase gap to 40px+.
-- **TEXT_OVERFLOW**: Bound text extends past container. Make container larger.
 - **LABEL_OVERLAP**: Arrow label collides with non-parent shape. Use free text instead.
 
-**HARD GATE**: If check_collision reports issues, you MUST fix them before moving on. Loop: fix → re-run check_collision → verify clean. Do NOT accept a diagram with unresolved collision warnings.
+**HARD GATE**: If check_collision reports TEXT_OBSCURED or ARROW_TEXT issues, you MUST fix them before moving on. These indicate invisible content. Loop: fix → re-run check_collision → verify clean.
 
 ### 5. Done
 
@@ -89,6 +92,7 @@ User request
 ├── Connect two elements with an arrow                          → connect_elements.py
 ├── Batch of patches                                            → batch_patch.py
 ├── Check for overlaps / boundary issues                        → check_collision.py
+├── **Sketch a physical object / scene / metaphor**             → chat2svg_sketch.py
 └── New diagram from scratch                                    → see "From Scratch" section
 ```
 
@@ -109,7 +113,7 @@ JSON: `[{"type":"rectangle","id":"r1","text":"LABEL","bg":"#hex","x":N,"y":N,"wi
 
 ### connect_elements.py — add arrow between elements
 ```
-python3 .../connect_elements.py <file> --from <id> --to <id> [--label "..."] [--style dashed] [--stroke-width 1|2|3]
+python3 .../connect_elements.py <file> --from <id> --to <id> [--label "..."] [--style dashed] [--stroke-width 1|2|3] [--start-side top|bottom|left|right] [--end-side top|bottom|left|right]
 ```
 
 ### patch_element.py — modify an existing element
@@ -159,6 +163,30 @@ Higher-fidelity output (proper text sizing, arrow bindings). Requires network.
 python3 .../skeleton_to_elements.py --spec '[{"type":"rectangle","x":0,"y":0,"id":"a","label":{"text":"Hello"}}]'
 ```
 
+### chat2svg_sketch.py — text → hand-drawn line sketch (LLM-generated SVG → freedraw)
+```
+python3 .../chat2svg_sketch.py "<prompt>" <file.excalidraw> --sketch [--x N] [--y N] [--scale F] [--save-svg PATH]
+```
+**Use ONLY for sketch/metaphor/illustration requests** — never for system diagrams, flows, or hierarchies. The `--sketch` flag emits stroke-only line art (no fills); omit it for filled cartoon-style output (rarely useful for our work). Calls Claude via the SAP gateway (no GPU needed).
+
+**File behavior**: each invocation **appends** to the target file (creates it if missing). Prior `chat2svg` strokes are preserved; later calls get an auto-incremented id prefix (`chat2svg_*`, `chat2svg0_*`, `chat2svg1_*`, ...). For storyboards, call once per scene at different `--x`/`--y` offsets — do NOT batch into one call. Layer titles/captions via `batch_add` after all sketches land.
+
+```bash
+# Single scene
+python3 .../chat2svg_sketch.py "lighthouse on a cliff at dusk" out.excalidraw --sketch --x 50 --y 80
+
+# Three-scene storyboard
+python3 .../chat2svg_sketch.py "two figures walking on hillside, golden light" out.excalidraw --sketch --x 50 --y 100 --scale 0.6
+python3 .../chat2svg_sketch.py "bridge over dark water in storm" out.excalidraw --sketch --x 400 --y 100 --scale 0.6
+python3 .../chat2svg_sketch.py "figure walking away from a glowing lantern" out.excalidraw --sketch --x 750 --y 100 --scale 0.6
+# Then add scene titles + caption text:
+python3 .../batch_add.py out.excalidraw '[
+  {"id":"t1","type":"text","text":"The Walk","x":120,"y":60,"text_size":18},
+  {"id":"t2","type":"text","text":"The Lifeline","x":470,"y":60,"text_size":18},
+  {"id":"t3","type":"text","text":"The Unthinkable","x":820,"y":60,"text_size":18}
+]'
+```
+
 ---
 
 ## Core Design Philosophy
@@ -186,12 +214,24 @@ A diagram is a visual argument showing relationships, causality, and flow that w
 | Compares two things | **Side-by-side** | Parallel structures with visual contrast |
 | Separates into phases | **Gap/Break** | Whitespace or thin dashed line between sections |
 | Is a pipeline (A→B→C) | **Linear flow** | Boxes in a row, arrows between |
+| Is a visual metaphor / illustration / scene | **Sketch** | Hand-drawn line art via `chat2svg_sketch.py` |
 
 **Variety rule**: For multi-concept diagrams, each major concept uses a different visual pattern.
+
+**Diagram vs Sketch — pick ONE:**
+- **Diagram (default)**: concepts, systems, processes, comparisons, hierarchies, flows. Uses `batch_add` + `connect_elements` + `layout_graph_native`. Geometric shapes carry meaning.
+- **Sketch (rare)**: scenes, metaphors, illustrations of physical objects, storyboards (e.g. "two figures at a bridge", "a lighthouse", "a person walking"). Uses `chat2svg_sketch.py` ONLY. Triggers: prompt mentions "sketch", "draw [physical thing]", "illustrate", "scene", "metaphor", "storyboard with figures/objects", or asks for line art.
+- **Mixed (storyboard with text panels)**: sketch each scene with `chat2svg_sketch.py` placed at different `--x`/`--y`, then add titles/captions via `batch_add` text elements on the same file.
 
 ### Pattern-Specific Techniques
 
 **Cycle/Spiral**: Place thematic summary in geometric center. Use ONE shape type for all nodes. Edge annotations (12-14px) near arrows.
+
+**Timeline**: One horizontal `line` element + small `ellipse` markers (12-20px) on it. Labels are free-floating text above/below the line, NOT bound to the markers. Place inflection labels alternately above/below to avoid stacking. Use a thicker line (`strokeWidth: 2`) for the spine and let dot size encode importance.
+
+**Gap/Break / Phase separator**: A thin dashed `line` element spanning vertically (or horizontally) between sections, with `strokeStyle: "dashed"` and `strokeWidth: 1`. Or just whitespace (~80-120px) — prefer whitespace unless the gap itself needs labeling.
+
+**Convergence**: Reverse of fan-out — multiple sources arrowing into one sink. Use `--end-side top` on all incoming arrows so they hit the same edge, and lay sources out horizontally above the sink.
 
 **Side-by-side comparison**: Mirror same concepts with sizes inverted. Same concept = same color on both sides. Size inverts; color stays constant. Every tier must have a distinct size (~4:2:1 area ratio).
 
@@ -219,6 +259,8 @@ A diagram is a visual argument showing relationships, causality, and flow that w
 
 **Diamond caution**: Diamonds have ~60% usable text area. If label > 1-2 short words, use rectangle instead.
 
+**Diamond is for branching, not classification.** A node titled "Intent Classification", "Validation", "Routing", or "Filter" is a *process step* — use a rectangle. Only use a diamond when the node has 2+ outgoing edges representing yes/no or category branches with distinct downstream paths.
+
 ---
 
 ## Color Tokens
@@ -240,6 +282,36 @@ A diagram is a visual argument showing relationships, causality, and flow that w
 - Use 2-5 tokens per diagram, not all 8.
 - Use progression (green→yellow→red) for intensity/sequence.
 - Annotation text: use `#868e96` (grey) stroke for secondary labels.
+
+---
+
+## Label Hygiene
+
+Shape labels are SHORT identifiers, not content dumps.
+
+| OK | NOT OK |
+|----|--------|
+| `"Frontend"` | `"Frontend\nBackend\nDatabase"` |
+| `"Step 1\nValidate"` (name + subtitle) | `"One user-visible behavior\nFrontend\nBackend\nDatabase"` (list of items) |
+| `"Agent Gate"` | `"Human reviews before agent proceeds"` (sentence) |
+
+**Rules:**
+- **Max 2 lines per label** — a name and optional subtitle. Never 3+ lines.
+- **Max ~20 chars per line** — if it wraps, the shape is doing too much.
+- **One concept per shape** — if you're listing items, each item is its own element.
+- **Sentences go in free-floating text**, not inside shapes.
+- **If showing layers inside a container**: use separate child shapes positioned inside the larger shape (z-order: container first in batch_add, children after). Do NOT put all layer names as multi-line text in the container's label.
+
+**Container labeling rule**: If a container holds child shapes inside it, do NOT give it bound text (no `"text"` field in batch_add). Bound text is centered and will be hidden by the children. Instead, add a separate free-floating text element positioned at the top-left inside the container (inset 10-15px from top-left corner). This acts as a title bar.
+
+```json
+// WRONG — bound label hidden by children:
+{"id": "outer", "type": "rectangle", "text": "SDD", "bg": "#fff9db", ...}
+
+// RIGHT — free-floating label at top edge:
+{"id": "outer", "type": "rectangle", "bg": "#fff9db", "x": 50, "y": 60, "width": 600, "height": 350},
+{"id": "outer_lbl", "type": "text", "text": "SDD", "x": 65, "y": 70, "text_size": 14}
+```
 
 ---
 
@@ -265,6 +337,8 @@ Not every text needs a box around it. Default to free-floating text.
 - **Primary**: 140-200px — main elements
 - **Secondary**: 100-140px — supporting elements
 - **Small**: 60-80px — details, markers
+
+**When the prompt says "weight", "importance", "heaviness", "priority", or "stakes" — encode it as SIZE, not just color.** A weight map of 5 items where every box is the same width fails the Isomorphism Test. The largest item should be ~2-3× the area of the smallest.
 
 ### Whitespace = Importance
 Most important element has most empty space around it (150-200px+ clearance).
@@ -335,6 +409,8 @@ Later elements render on top. Order:
 - **Label minimum gap**: arrow must be longer than label text. If gap < `label_chars × 18px`, use free text instead.
 - **Pipeline arrows**: `--stroke-width 1` for tight pipelines (25-35px gaps)
 - **Opposing arrows** (A→B and B→A): don't use `--label` on both — labels collide. Use free text.
+- **Fan-out uniform sides**: When one node connects to multiple targets in the same direction, use `--start-side` and `--end-side` to force uniform connection points. Example: fan-out downward = `--start-side bottom --end-side top` on ALL arrows from that node.
+- **Vertical spine alignment**: In top-to-bottom flows, center all spine elements at the same X coordinate. Use `x = center_x - width/2` for each element.
 
 ---
 
@@ -371,6 +447,13 @@ Use batch_add with explicit x/y coordinates for full artistic control:
 python3 .../batch_add.py output.excalidraw '[...]'
 python3 .../connect_elements.py output.excalidraw --from a --to b
 ```
+
+### Sketch / metaphor / illustration / storyboard (rare):
+ONLY when the prompt asks for a hand-drawn scene of physical objects (figures, lighthouse, bridge, lantern, etc.) — not for systems, flows, or hierarchies.
+```bash
+python3 .../chat2svg_sketch.py "<scene>" output.excalidraw --sketch --x 50 --y 80
+```
+For storyboards, call once per scene at different `--x`/`--y` (offsets) — file appends. Then layer titles/captions via `batch_add`.
 
 ---
 

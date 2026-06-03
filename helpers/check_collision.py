@@ -56,18 +56,28 @@ def check_collisions(filepath: str, target_id: str = None, threshold: float = 10
     # Filter to meaningful elements (shapes + free text only)
     candidates = [e for e in elements if e["id"] not in text_inside]
 
-    # Pair text with its visual parent (skip collision between shape and its label)
+    # Pair text with its visual parent (skip collision between shape and its BOUND label)
+    # Only skip if text is clearly the shape's internal label (centered both horizontally AND vertically)
     visual_pairs_to_skip = set()
+    shape_types = {"rectangle", "ellipse", "diamond"}
     for e in elements:
         if e["type"] == "text" and e["id"] not in text_inside:
             eb = get_bounds_tuple(e)
+            tcx = (eb[0] + eb[2]) / 2
+            tcy = (eb[1] + eb[3]) / 2
             for s in elements:
-                if s["type"] != "text" and s["id"] != e["id"]:
+                if s["type"] in shape_types and s["id"] != e["id"]:
                     sb = get_bounds_tuple(s)
-                    tcx = (eb[0] + eb[2]) / 2
-                    tcy = (eb[1] + eb[3]) / 2
                     if sb[0] <= tcx <= sb[2] and sb[1] <= tcy <= sb[3]:
-                        visual_pairs_to_skip.add((min(e["id"], s["id"]), max(e["id"], s["id"])))
+                        # Only skip if text is roughly centered in the shape (likely its label)
+                        shape_cx = (sb[0] + sb[2]) / 2
+                        shape_cy = (sb[1] + sb[3]) / 2
+                        shape_w = sb[2] - sb[0]
+                        shape_h = sb[3] - sb[1]
+                        dx_ratio = abs(tcx - shape_cx) / max(shape_w, 1)
+                        dy_ratio = abs(tcy - shape_cy) / max(shape_h, 1)
+                        if dx_ratio < 0.3 and dy_ratio < 0.3:
+                            visual_pairs_to_skip.add((min(e["id"], s["id"]), max(e["id"], s["id"])))
 
     collisions = []
 
@@ -117,10 +127,89 @@ def check_collisions(filepath: str, target_id: str = None, threshold: float = 10
                             f"  ⚠ {target_id} exceeds frame {fid} bounds "
                             f"(frame: {fb[0]:.0f},{fb[1]:.0f} to {fb[2]:.0f},{fb[3]:.0f})")
 
-    if not collisions and not boundary_warnings:
+    # Arrow-over-text check: free-floating text obscured by arrows
+    arrow_text_warnings = []
+    free_texts = [e for e in elements if e["type"] == "text" and e["id"] not in text_inside
+                  and not e.get("containerId")]
+    arrows = [e for e in elements if e["type"] == "arrow"]
+    for txt in free_texts:
+        tb = get_bounds_tuple(txt)
+        for arrow in arrows:
+            if txt.get("containerId") == arrow["id"]:
+                continue
+            ab = get_bounds_tuple(arrow)
+            area = overlap_area(tb, ab)
+            if area > 0:
+                text_area = (tb[2] - tb[0]) * (tb[3] - tb[1])
+                if text_area > 0 and area / text_area > 0.3:
+                    arrow_text_warnings.append(
+                        f"  ⚠ ARROW_TEXT: '{txt.get('text', txt['id'])}' obscured by {arrow['id']}")
+
+    # Shape-over-text check: free-floating text hidden behind overlapping shapes
+    # (z-order: later elements render on top, so shapes after text hide the text)
+    text_obscured_warnings = []
+    for txt in free_texts:
+        tb = get_bounds_tuple(txt)
+        txt_text = txt.get("text", txt["id"])
+        for s in elements:
+            if s["type"] not in shape_types or s["id"] == txt["id"]:
+                continue
+            pair_key = (min(txt["id"], s["id"]), max(txt["id"], s["id"]))
+            if pair_key in visual_pairs_to_skip:
+                continue
+            sb = get_bounds_tuple(s)
+            area = overlap_area(tb, sb)
+            if area > 0:
+                text_area = (tb[2] - tb[0]) * (tb[3] - tb[1])
+                if text_area > 0 and area / text_area > 0.25:
+                    text_obscured_warnings.append(
+                        f"  ⚠ TEXT_OBSCURED: '{txt_text}' hidden behind shape {s['id']}")
+
+    # Container label hidden by child shapes: bound text overlapping sibling shapes
+    # Only warn when a shape INSIDE the same container overlaps the container's label
+    for e in elements:
+        if e["type"] == "text" and e["id"] in text_inside:
+            container_id = e.get("containerId")
+            if not container_id:
+                continue
+            container_el = next((el for el in elements if el["id"] == container_id), None)
+            if not container_el:
+                continue
+            container_bounds = get_bounds_tuple(container_el)
+            tb = get_bounds_tuple(e)
+            txt_text = e.get("text", e["id"])
+            for s in elements:
+                if s["type"] not in shape_types or s["id"] == container_id or s["id"] == e["id"]:
+                    continue
+                sb = get_bounds_tuple(s)
+                # Only check shapes whose center is inside the container
+                scx = (sb[0] + sb[2]) / 2
+                scy = (sb[1] + sb[3]) / 2
+                if not (container_bounds[0] <= scx <= container_bounds[2] and
+                        container_bounds[1] <= scy <= container_bounds[3]):
+                    continue
+                # Skip parent containers (shape is larger than the text's container)
+                shape_area = (sb[2] - sb[0]) * (sb[3] - sb[1])
+                container_area = (container_bounds[2] - container_bounds[0]) * (container_bounds[3] - container_bounds[1])
+                if shape_area > container_area:
+                    continue
+                area = overlap_area(tb, sb)
+                if area > 0:
+                    text_area = (tb[2] - tb[0]) * (tb[3] - tb[1])
+                    if text_area > 0 and area / text_area > 0.1:
+                        text_obscured_warnings.append(
+                            f"  ⚠ TEXT_OBSCURED: container label '{txt_text}' hidden by {s['id']}")
+
+    if not collisions and not boundary_warnings and not arrow_text_warnings and not text_obscured_warnings:
         return "OK: no collisions detected"
 
     lines = []
+    if text_obscured_warnings:
+        lines.append(f"TEXT_OBSCURED: {len(text_obscured_warnings)} — text hidden behind shapes")
+        lines.extend(text_obscured_warnings)
+    if arrow_text_warnings:
+        lines.append(f"ARROW_TEXT: {len(arrow_text_warnings)} — text hidden behind arrows")
+        lines.extend(arrow_text_warnings)
     if collisions:
         lines.append(f"COLLISIONS: {len(collisions)} found")
         for a_id, b_id, area in sorted(collisions, key=lambda x: -x[2]):

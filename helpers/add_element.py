@@ -27,6 +27,7 @@ ELEMENT_DEFAULTS = {
     "frameId": None,
     "roundness": None,
     "hasTextLink": False,
+    "fontFamily": 1,
 }
 
 

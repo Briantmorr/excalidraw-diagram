@@ -28,6 +28,7 @@ ELEMENT_DEFAULTS = {
     "frameId": None,
     "roundness": None,
     "hasTextLink": False,
+    "fontFamily": 1,
 }
 
 
@@ -129,8 +130,20 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
     for spec in specs:
         spec.setdefault("type", "rectangle")
         spec.setdefault("bg", "transparent")
-        spec.setdefault("stroke", "#000000")
+        spec["stroke"] = "#000000"
         spec.setdefault("text_size", 14)
+
+    # Label hygiene warnings
+    warnings = []
+    for spec in specs:
+        text = spec.get("text", "")
+        if text and spec.get("type") != "text":
+            lines = text.split("\n")
+            if len(lines) > 2:
+                warnings.append(f"  WARN: '{spec['id']}' has {len(lines)}-line label — max 2 lines per shape")
+            for line in lines:
+                if len(line) > 25:
+                    warnings.append(f"  WARN: '{spec['id']}' label line too long ({len(line)} chars): \"{line[:25]}...\"")
 
     # Compute positions
     specs = compute_positions(specs, elements, below_id, row_at, gap,
@@ -211,6 +224,19 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
             if etype in ("rectangle", "diamond"):
                 shape["roundness"] = {"type": 3}
 
+            if etype == "line":
+                # Excalidraw lines/arrows need a `points` array of [x,y] pairs relative to (x,y).
+                # If caller supplies width/height, draw a single segment from (0,0) to (w,h).
+                pts = spec.get("points")
+                if pts is None:
+                    pts = [[0, 0], [w, h]]
+                shape["points"] = pts
+                shape["lastCommittedPoint"] = None
+                shape["startBinding"] = None
+                shape["endBinding"] = None
+                shape["startArrowhead"] = None
+                shape["endArrowhead"] = None
+
             elements.append(shape)
 
             text = spec.get("text")
@@ -266,15 +292,17 @@ def batch_add(filepath: str, specs: list[dict], below_id: str = None,
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     from check_collision import check_collisions
 
-    warnings = []
+    collision_warnings = []
     for eid in added_ids:
         result = check_collisions(abs_filepath, eid)
         if "OK" not in result:
-            warnings.append(f"  {eid}: {result}")
+            collision_warnings.append(f"  {eid}: {result}")
 
     msg = f"OK: added {len(added_ids)}/{len(specs)} elements"
     if warnings:
-        msg += "\n" + "\n".join(warnings)
+        msg += "\nLABEL WARNINGS:\n" + "\n".join(warnings)
+    if collision_warnings:
+        msg += "\n" + "\n".join(collision_warnings)
     return msg
 
 

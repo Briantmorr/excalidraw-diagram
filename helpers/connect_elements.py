@@ -27,17 +27,38 @@ def next_index(elements: list[dict]) -> str:
     return "a0"
 
 
-def compute_fixed_points(src: dict, tgt: dict) -> tuple[list[float], list[float]]:
-    """Compute fixedPoint [0-1, 0-1] for arrow start/end based on relative positions."""
+SIDE_TO_FP = {
+    "top": [0.5, 0.0],
+    "bottom": [0.5, 1.0],
+    "left": [0.0, 0.5],
+    "right": [1.0, 0.5],
+}
+
+
+def compute_fixed_points(src: dict, tgt: dict,
+                         start_side: str | None = None,
+                         end_side: str | None = None) -> tuple[list[float], list[float]]:
+    """Compute fixedPoint [0-1, 0-1] for arrow start/end based on relative positions.
+    If start_side/end_side provided, use those instead of auto-computing."""
+    if start_side and end_side:
+        return SIDE_TO_FP[start_side], SIDE_TO_FP[end_side]
+
     sx, sy = center(src)
     tx, ty = center(tgt)
     dx, dy = tx - sx, ty - sy
 
-    if abs(dx) > abs(dy):
+    if start_side:
+        start_fp = SIDE_TO_FP[start_side]
+    elif abs(dx) > abs(dy):
         start_fp = [1.0, 0.5] if dx > 0 else [0.0, 0.5]
-        end_fp = [0.0, 0.5] if dx > 0 else [1.0, 0.5]
     else:
         start_fp = [0.5, 1.0] if dy > 0 else [0.5, 0.0]
+
+    if end_side:
+        end_fp = SIDE_TO_FP[end_side]
+    elif abs(dx) > abs(dy):
+        end_fp = [0.0, 0.5] if dx > 0 else [1.0, 0.5]
+    else:
         end_fp = [0.5, 0.0] if dy > 0 else [0.5, 1.0]
 
     return start_fp, end_fp
@@ -50,6 +71,8 @@ def connect_elements(
     label: str | None = None,
     style: str = "solid",
     stroke_width: int = 2,
+    start_side: str | None = None,
+    end_side: str | None = None,
 ) -> str:
     path = Path(filepath)
     data = json.loads(path.read_text())
@@ -65,7 +88,7 @@ def connect_elements(
     src = by_id[from_id]
     tgt = by_id[to_id]
 
-    start_fp, end_fp = compute_fixed_points(src, tgt)
+    start_fp, end_fp = compute_fixed_points(src, tgt, start_side, end_side)
 
     src_w = src.get("width", 0)
     src_h = src.get("height", 0)
@@ -78,6 +101,23 @@ def connect_elements(
     arrow_ey = tgt["y"] + end_fp[1] * tgt_h
     dx = arrow_ex - arrow_sx
     dy = arrow_ey - arrow_sy
+
+    # Enforce minimum arrow length for labeled arrows (otherwise label hides the arrow)
+    if label:
+        font_size = 14
+        label_w = len(label) * font_size * 0.55
+        min_length = label_w + 50
+        is_horizontal = abs(dx) > abs(dy)
+        if is_horizontal and abs(dx) < min_length:
+            shortfall = min_length - abs(dx)
+            sign = 1 if dx >= 0 else -1
+            tgt["x"] += sign * shortfall
+            # Move target's bound text too
+            for el in elements:
+                if el.get("containerId") == to_id:
+                    el["x"] += sign * shortfall
+            arrow_ex = tgt["x"] + end_fp[0] * tgt_w
+            dx = arrow_ex - arrow_sx
 
     arrow_id = f"arrow_{from_id}_{to_id}"
     if arrow_id in by_id:
@@ -201,6 +241,10 @@ def main() -> None:
     parser.add_argument("--label", default=None, help="Text label on the arrow")
     parser.add_argument("--style", default="solid", choices=["solid", "dashed"], help="Stroke style")
     parser.add_argument("--stroke-width", type=int, default=2, choices=[1, 2, 3], help="Stroke width")
+    parser.add_argument("--start-side", default=None, choices=["top", "bottom", "left", "right"],
+                        help="Force arrow to start from this side of source element")
+    parser.add_argument("--end-side", default=None, choices=["top", "bottom", "left", "right"],
+                        help="Force arrow to end at this side of target element")
 
     args = parser.parse_args()
     result = connect_elements(
@@ -210,6 +254,8 @@ def main() -> None:
         label=args.label,
         style=args.style,
         stroke_width=args.stroke_width,
+        start_side=args.start_side,
+        end_side=args.end_side,
     )
     print(result)
 
