@@ -37,6 +37,35 @@ def snap(v: float) -> float:
     return round(v / GRID) * GRID
 
 
+def _normalize_native_elements(elements: list[dict]) -> list[dict]:
+    """Post-process output of convertToExcalidrawElements so it satisfies the
+    skill's rendering invariants:
+
+    - Every text element has a `rawText` field (Obsidian Excalidraw plugin
+      reads this to render the text — without it the scene shows the
+      "Loading scene..." spinner).
+    - Shapes have an explicit black `strokeColor`. The official API defaults
+      to `#1e1e1e` which violates the all-borders-#000000 rule.
+    - Shapes always come before arrows in the array (plugin hangs otherwise).
+    """
+    for el in elements:
+        t = el.get("type")
+        if t == "text":
+            if "rawText" not in el:
+                el["rawText"] = el.get("originalText", el.get("text", ""))
+            el.setdefault("autoResize", True)
+            el.setdefault("lineHeight", 1.25)
+        elif t in ("rectangle", "ellipse", "diamond", "line"):
+            sc = el.get("strokeColor")
+            if not sc or sc == "#1e1e1e":
+                el["strokeColor"] = "#000000"
+
+    # Stable partition: non-arrows first, arrows last, preserving relative order.
+    non_arrows = [e for e in elements if e.get("type") != "arrow"]
+    arrows = [e for e in elements if e.get("type") == "arrow"]
+    return non_arrows + arrows
+
+
 def build_dot_source(node_map: dict, edges: list, engine: str, direction: str) -> str:
     rankdir = {"DOWN": "TB", "RIGHT": "LR", "UP": "BT", "LEFT": "RL"}.get(direction, "TB")
     lines = [f"digraph {{", f"  rankdir={rankdir};", "  ranksep=0.6;", "  nodesep=0.5;"]
@@ -118,8 +147,9 @@ def build_skeleton(node_map: dict, positions: dict, edges: list, origin_x: float
         }
         if info["bg"] != "transparent":
             elem["backgroundColor"] = info["bg"]
-        if info.get("stroke") and info["stroke"] != "#000000":
-            elem["strokeColor"] = info["stroke"]
+        # Always pin strokeColor — Excalidraw's default ('#1e1e1e') violates the
+        # "all shape borders #000000" invariant.
+        elem["strokeColor"] = info.get("stroke") or "#000000"
         if info["text"]:
             elem["label"] = {"text": info["text"]}
         skeleton.append(elem)
@@ -222,6 +252,11 @@ def layout_graph_native(
     skeleton = build_skeleton(node_map, positions, edges, origin_x, origin_y)
     elements = convert_skeleton(skeleton, regenerate_ids=False)
 
+    # Patch fields the official API does not emit but the Obsidian Excalidraw
+    # plugin renderer expects (rawText for all text elements, monotonic indices
+    # so shapes always render before arrows, explicit strokeColor on shapes).
+    elements = _normalize_native_elements(elements)
+
     # Write to file
     if path.exists():
         data = json.loads(path.read_text())
@@ -230,14 +265,32 @@ def layout_graph_native(
             if e["id"] in existing_ids:
                 return f"ERROR: element ID '{e['id']}' already exists in file"
         data["elements"].extend(elements)
+        # Re-partition combined element list so all arrows come last.
+        non_arrows = [e for e in data["elements"] if e.get("type") != "arrow"]
+        arrows = [e for e in data["elements"] if e.get("type") == "arrow"]
+        data["elements"] = non_arrows + arrows
     else:
         data = {
             "type": "excalidraw",
             "version": 2,
-            "source": "layout_graph_native",
+            "source": "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3",
             "elements": elements,
-            "appState": {"gridSize": None},
+            "appState": {
+                "gridSize": None,
+                "viewBackgroundColor": "#ffffff",
+                "isBindingEnabled": True,
+            },
+            "files": {},
         }
+
+    if "files" not in data:
+        data["files"] = {}
+    if "appState" not in data:
+        data["appState"] = {}
+    data["appState"].setdefault("gridSize", None)
+    data["appState"].setdefault("viewBackgroundColor", "#ffffff")
+    data["appState"].setdefault("isBindingEnabled", True)
+    data["source"] = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
 
     path.write_text(json.dumps(data, indent="\t"))
     return f"OK: laid out {len(nodes)} nodes + {len(edges)} edges (engine={engine}, direction={direction})"
