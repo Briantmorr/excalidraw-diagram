@@ -12,16 +12,38 @@ from typing import Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from helpers.core import (  # noqa: E402
-    ARROW_COLOR, DEFAULT_FONT_FAMILY, SAFE_BINDING, TEXT_BBOX_RATIO, TEXT_BODY,
-    appstate_defaults, frac_index, gen_nonce, gen_seed, next_index, now_ms,
+    ARROW_COLOR, DEFAULT_FONT_FAMILY, EDGE_GAP, SAFE_BINDING, TEXT_BBOX_RATIO,
+    TEXT_BODY, appstate_defaults, frac_index, gen_nonce, gen_seed, next_index,
+    now_ms, shape_edge_point,
 )
 
 LABEL_FONT_SIZE: int = 14
 LABEL_PADDING: int = 50
 BODY_TEXT_COLOR: str = TEXT_BODY
+LABEL_MAX_CHARS: int = 8           # arrow labels must be one short token
+LABEL_MAX_TOKENS: int = 1
 
 Side = Literal["top", "bottom", "left", "right"]
 Style = Literal["solid", "dashed"]
+
+
+def normalize_label(raw: str | None) -> str | None:
+    """Reduce an arrow label to ≤1 token, ≤LABEL_MAX_CHARS.
+
+    Multi-segment labels like "Yes / Gold" become "Yes" — second axis
+    belongs in a node, not on an arrow. This is the single gate every
+    pattern flows labels through.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    for sep in ("/", "|", ",", ";", ":", " - ", "  "):
+        if sep in s:
+            s = s.split(sep, 1)[0].strip()
+    s = s.split()[0] if s.split() else s
+    return s[:LABEL_MAX_CHARS] if s else None
 
 
 @dataclass
@@ -34,6 +56,9 @@ class ConnectSpec:
     start_side: Side | None = None
     end_side: Side | None = None
     force_elbow: bool = False
+
+    def __post_init__(self) -> None:
+        self.label = normalize_label(self.label)
 
 
 @dataclass
@@ -78,21 +103,29 @@ def compute_edge_point(
     sx, sy = _center(src)
     tx, ty = _center(tgt)
     dx, dy = tx - sx, ty - sy
+    el = src if is_source else tgt
+    x1, y1, x2, y2 = _bounds(el)
+    cx, cy = _center(el)
     if side is None:
         if abs(dy) > 2 * abs(dx):
             side = ("bottom" if dy > 0 else "top") if is_source else ("top" if dy > 0 else "bottom")
         else:
             side = ("right" if dx > 0 else "left") if is_source else ("left" if dx > 0 else "right")
-    el = src if is_source else tgt
-    x1, y1, x2, y2 = _bounds(el)
-    cx, cy = _center(el)
+        # Auto side: attach to the TRUE shape outline (ellipse curve / diamond
+        # slant), inset by EDGE_GAP. Mirrors EA intersectElementWithLine.
+        toward = (tx, ty) if is_source else (sx, sy)
+        px, py = shape_edge_point(el, toward, gap=EDGE_GAP)
+        return px, py, side
+    # Explicit side: snap to that face midpoint (unchanged — needed for gates,
+    # barriers, and uniform fan-out where the caller controls the face), inset
+    # by EDGE_GAP so the arrowhead clears the border.
     if side == "top":
-        return cx, y1, side
+        return cx, y1 - EDGE_GAP, side
     if side == "bottom":
-        return cx, y2, side
+        return cx, y2 + EDGE_GAP, side
     if side == "left":
-        return x1, cy, side
-    return x2, cy, side
+        return x1 - EDGE_GAP, cy, side
+    return x2 + EDGE_GAP, cy, side
 
 
 def _seg_hits_rect(
@@ -233,15 +266,20 @@ def _plan_label_shifts(specs: list[ConnectSpec], by_id: dict[str, dict]) -> dict
         src, tgt = by_id.get(spec.from_id), by_id.get(spec.to_id)
         if not src or not tgt:
             continue
-        sx, sy, _ = compute_edge_point(src, tgt, spec.start_side, is_source=True)
-        ex, ey, _ = compute_edge_point(src, tgt, spec.end_side, is_source=False)
-        dx, dy = ex - sx, ey - sy
-        if abs(dx) <= abs(dy):
+        sx, _sy, _ = compute_edge_point(src, tgt, spec.start_side, is_source=True)
+        ex, _ey, _ = compute_edge_point(src, tgt, spec.end_side, is_source=False)
+        # Direction from centers (stable); edge points can cross when shapes are
+        # nearer than 2*EDGE_GAP, which would flip the sign of ex-sx.
+        scx, _scy = _center(src)
+        tcx, tcy = _center(tgt)
+        cdx, cdy = tcx - scx, tcy - _scy
+        dx = ex - sx
+        if abs(cdx) <= abs(cdy):
             continue
         min_len = _tw(spec.label) + LABEL_PADDING
         if abs(dx) >= min_len:
             continue
-        proposed = (1 if dx >= 0 else -1) * (min_len - abs(dx))
+        proposed = (1 if cdx >= 0 else -1) * (min_len - abs(dx))
         existing = shifts.get(spec.to_id)
         if existing is None or abs(proposed) > abs(existing):
             shifts[spec.to_id] = proposed

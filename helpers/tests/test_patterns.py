@@ -197,5 +197,132 @@ class PatternsTestCase(unittest.TestCase):
         self.assertEqual(len(arrows), 2)
 
 
+class DecisionTreeLabelTests(PatternsTestCase):
+    def test_multi_word_branch_conditions_normalized(self) -> None:
+        from helpers.patterns import Branch, decision_tree
+        decision_tree(self.path, title="Tier?", root="Active customer",
+                      branches=[
+                          Branch(id="reject", label="Reject", condition="No"),
+                          Branch(id="gold",   label="30% off", condition="Yes / Gold"),
+                          Branch(id="silver", label="20% off", condition="Yes / Silver"),
+                      ])
+        data = json.loads(self.path.read_text())
+        labels = [e.get("text", "") for e in data["elements"]
+                  if e.get("type") == "text"
+                  and (e.get("containerId") or "").startswith("arrow_")]
+        for lbl in labels:
+            self.assertNotIn("/", lbl)
+            self.assertLessEqual(len(lbl.split()), 1)
+
+    def test_duplicate_labels_deduped(self) -> None:
+        from helpers.patterns import Branch, decision_tree
+        decision_tree(self.path, title="Tier?", root="Q",
+                      branches=[
+                          Branch(id="g", label="Gold",   condition="Yes / Gold"),
+                          Branch(id="s", label="Silver", condition="Yes / Silver"),
+                          Branch(id="b", label="Bronze", condition="Yes / Bronze"),
+                      ])
+        data = json.loads(self.path.read_text())
+        labels = [e.get("text", "") for e in data["elements"]
+                  if e.get("type") == "text"
+                  and (e.get("containerId") or "").startswith("arrow_")]
+        # All three normalise to "Yes" → only one label kept.
+        self.assertEqual(labels.count("Yes"), 1)
+
+
+class ComposeTests(PatternsTestCase):
+    def test_stacks_vertically_with_unique_ids(self) -> None:
+        from helpers.patterns import ComposeStep, compose
+        compose(self.path, [
+            ComposeStep("pipeline", {"title": "P", "stages": ["A", "B"]}),
+            ComposeStep("pipeline", {"title": "Q", "stages": ["C", "D"]}),
+        ])
+        data = json.loads(self.path.read_text())
+        ids = [e["id"] for e in data["elements"]]
+        self.assertEqual(len(ids), len(set(ids)))  # unique
+        # Second band sits below first.
+        first_band = [e for e in data["elements"] if e["id"].startswith("b0_")]
+        second_band = [e for e in data["elements"] if e["id"].startswith("b1_")]
+        self.assertGreater(len(first_band), 0)
+        self.assertGreater(len(second_band), 0)
+        first_bottom = max(float(e.get("y", 0)) + float(e.get("height", 0))
+                           for e in first_band)
+        second_top = min(float(e.get("y", 0)) for e in second_band)
+        self.assertGreaterEqual(second_top, first_bottom)
+
+    def test_arrows_after_all_shapes(self) -> None:
+        from helpers.patterns import ComposeStep, compose
+        compose(self.path, [
+            ComposeStep("pipeline", {"title": "P", "stages": ["A", "B", "C"]}),
+            ComposeStep("pipeline", {"title": "Q", "stages": ["D", "E"]}),
+        ])
+        data = json.loads(self.path.read_text())
+        types = [e.get("type") for e in data["elements"]]
+        first_arrow_idx = next((i for i, t in enumerate(types) if t == "arrow"), None)
+        if first_arrow_idx is not None:
+            self.assertNotIn("rectangle", types[first_arrow_idx + 1:])
+            self.assertNotIn("ellipse", types[first_arrow_idx + 1:])
+            self.assertNotIn("diamond", types[first_arrow_idx + 1:])
+
+
+class PairedContrastTests(PatternsTestCase):
+    def test_two_rows_with_bracket(self) -> None:
+        from helpers.patterns import ContrastRow, paired_contrast
+        paired_contrast(
+            self.path, title="Two truths still holding",
+            left_label="What I feel", right_label="What is true",
+            rows=[
+                ContrastRow(label="Ending",
+                            left="finality the other day",
+                            right="40-yr friendship"),
+                ContrastRow(label="Stepping back",
+                            left="can step back",
+                            right="cannot leave her"),
+            ],
+        )
+        data = self._assert_no_fails(self.path)
+        rects = [e for e in data["elements"] if e.get("type") == "rectangle"]
+        arrows = [e for e in data["elements"] if e.get("type") == "arrow"]
+        self.assertEqual(len(rects), 4)         # 2 rows x 2 columns
+        self.assertEqual(len(arrows), 2)        # one bracket per row
+        for a in arrows:
+            self.assertEqual(a.get("strokeStyle"), "dashed")
+
+    def test_no_bracket(self) -> None:
+        from helpers.patterns import ContrastRow, paired_contrast
+        paired_contrast(
+            self.path, title="X vs Y",
+            left_label="X", right_label="Y",
+            rows=[ContrastRow(label="Row", left="a", right="b")],
+            bracket=False,
+        )
+        data = self._assert_no_fails(self.path)
+        arrows = [e for e in data["elements"] if e.get("type") == "arrow"]
+        self.assertEqual(len(arrows), 0)
+
+
+class TimelineAnnotationTests(PatternsTestCase):
+    def test_annotations_all_above(self) -> None:
+        """Annotations must NOT alternate above/below — eye-scan suffers."""
+        from helpers.patterns import TimelineItem, timeline
+        timeline(self.path, title="Five steps",
+                 items=[TimelineItem(id=f"i{i}", label=f"Step {i}",
+                                     annotation=f"t{i}") for i in range(5)])
+        data = json.loads(self.path.read_text())
+        # Find marker centers and annotation centers; assert all annotations
+        # are above (smaller y) than their markers.
+        markers = {e["id"]: e for e in data["elements"]
+                   if e.get("type") == "ellipse"}
+        annos = [e for e in data["elements"]
+                 if e.get("type") == "text"
+                 and (e.get("id") or "").endswith("_anno")]
+        self.assertEqual(len(annos), 5)
+        for a in annos:
+            anchor_id = a["id"].rsplit("_anno", 1)[0]
+            marker = markers[anchor_id]
+            self.assertLess(float(a["y"]), float(marker["y"]),
+                            f"{a['id']} not above {anchor_id}")
+
+
 if __name__ == "__main__":
     unittest.main()

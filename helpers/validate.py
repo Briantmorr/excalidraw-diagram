@@ -572,6 +572,214 @@ def check_invariants(elements: list[dict],
             findings.append(Finding("WARN", "BACKGROUND_COLOR",
                                     f"viewBackgroundColor {bg!r} != "
                                     f"{RUBRIC_TARGETS['background_color']}", ()))
+
+    arrow_label_ids = {
+        be["id"]
+        for e in live if e.get("type") == "arrow"
+        for be in (e.get("boundElements") or [])
+        if isinstance(be, dict) and be.get("type") == "text"
+    }
+    for e in live:
+        if e.get("type") != "text" or e["id"] not in arrow_label_ids:
+            continue
+        text = (e.get("text") or "").strip()
+        if not text:
+            continue
+        tokens = text.split()
+        if len(tokens) > 1 or len(text) > 8 or any(sep in text for sep in "/|,;:"):
+            findings.append(Finding(
+                "FAIL", "LABEL_TOO_LONG",
+                f"arrow label {text!r} must be ≤1 token, ≤8 chars (no separators)",
+                (e["id"],),
+            ))
+    return findings
+
+
+def _seg_intersect(p1: tuple[float, float], p2: tuple[float, float],
+                   p3: tuple[float, float], p4: tuple[float, float]) -> bool:
+    """True if segment p1-p2 crosses segment p3-p4 (proper intersection)."""
+    def cross(o: tuple[float, float], a: tuple[float, float],
+              b: tuple[float, float]) -> float:
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    d1 = cross(p3, p4, p1)
+    d2 = cross(p3, p4, p2)
+    d3 = cross(p1, p2, p3)
+    d4 = cross(p1, p2, p4)
+    return ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and \
+           ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0))
+
+
+def _arrow_segments(arrow: dict) -> list[tuple[tuple[float, float],
+                                                tuple[float, float]]]:
+    pts = arrow.get("points") or []
+    if len(pts) < 2:
+        return []
+    ax, ay = float(arrow.get("x", 0)), float(arrow.get("y", 0))
+    abs_pts = [(ax + float(p[0]), ay + float(p[1])) for p in pts]
+    return list(zip(abs_pts, abs_pts[1:]))
+
+
+def _seg_hits_rect_strict(p1: tuple[float, float], p2: tuple[float, float],
+                           bbox: tuple[float, float, float, float]) -> bool:
+    """True if segment crosses any of the 4 rect edges. Endpoints inside count."""
+    x1, y1, x2, y2 = bbox
+    edges = [((x1, y1), (x2, y1)), ((x2, y1), (x2, y2)),
+             ((x2, y2), (x1, y2)), ((x1, y2), (x1, y1))]
+    for e1, e2 in edges:
+        if _seg_intersect(p1, p2, e1, e2):
+            return True
+    return False
+
+
+def _arrow_endpoints_ids(arrow: dict) -> set[str]:
+    out: set[str] = set()
+    for key in ("startBinding", "endBinding"):
+        b = arrow.get(key)
+        if isinstance(b, dict) and b.get("elementId"):
+            out.add(b["elementId"])
+    return out
+
+
+def check_aesthetics(elements: list[dict]) -> list[Finding]:
+    """Geometric / numeric checks that used to require eyes-on review.
+
+    - ARROW_CROSSES_NON_ENDPOINT: arrow segment passes through a shape that
+      isn't its source or target.
+    - ARROW_CROSSES_ARROW: two arrows visually cross.
+    - TEXT_OVERFLOWS_NEIGHBOR: free-text bbox overlaps a non-parent shape.
+    - TEXT_EXCEEDS_CONTAINER: bound text wider/taller than its container.
+    - TITLE_FONT_TOO_SMALL: title font-size not at least body+8.
+    - PALETTE_OVERUSED: more than 5 distinct fill colors in use.
+    """
+    findings: list[Finding] = []
+    live = _live(elements)
+    shapes = [e for e in live
+              if e.get("type") in SHAPE_TYPES
+              and float(e.get("width", 0) or 0) > 0]
+    arrows = [e for e in live if e.get("type") == "arrow"]
+    free_text = [e for e in live
+                 if e.get("type") == "text"
+                 and e.get("containerId") is None]
+    bound_text = [e for e in live
+                  if e.get("type") == "text"
+                  and e.get("containerId") is not None]
+    by_id = {e["id"]: e for e in live}
+
+    # ARROW_CROSSES_NON_ENDPOINT
+    frame_ids_arrow = _detect_frames(elements)
+    for a in arrows:
+        endpoints = _arrow_endpoints_ids(a)
+        for seg_p1, seg_p2 in _arrow_segments(a):
+            for s in shapes:
+                if s["id"] in endpoints:
+                    continue
+                if s["id"] in frame_ids_arrow:
+                    continue  # arrows naturally cross frame boundaries
+                if _seg_hits_rect_strict(seg_p1, seg_p2, _bounds(s)):
+                    findings.append(Finding(
+                        "FAIL", "ARROW_CROSSES_NON_ENDPOINT",
+                        f"arrow {a['id']} crosses non-endpoint shape {s['id']}",
+                        (a["id"], s["id"]),
+                    ))
+                    break  # one report per arrow per offending shape
+
+    # ARROW_CROSSES_ARROW
+    seen_pairs: set[tuple[str, str]] = set()
+    for i, a1 in enumerate(arrows):
+        for a2 in arrows[i + 1:]:
+            key = tuple(sorted((a1["id"], a2["id"])))
+            if key in seen_pairs:
+                continue
+            crossed = False
+            for s1, s2 in _arrow_segments(a1):
+                for t1, t2 in _arrow_segments(a2):
+                    if _seg_intersect(s1, s2, t1, t2):
+                        crossed = True
+                        break
+                if crossed:
+                    break
+            if crossed:
+                seen_pairs.add(key)
+                findings.append(Finding(
+                    "WARN", "ARROW_CROSSES_ARROW",
+                    f"arrows {a1['id']} and {a2['id']} cross",
+                    (a1["id"], a2["id"]),
+                ))
+
+    # TEXT_OVERFLOWS_NEIGHBOR
+    frame_ids = _detect_frames(elements)
+    for t in free_text:
+        tb = _bounds(t)
+        for s in shapes:
+            if s["id"] == t.get("containerId"):
+                continue
+            if s["id"] in frame_ids:
+                continue  # frames intentionally enclose other elements
+            sb = _bounds(s)
+            if _overlap(tb, sb) > 100.0:
+                findings.append(Finding(
+                    "WARN", "TEXT_OVERFLOWS_NEIGHBOR",
+                    f"free-text {t['id']} overlaps shape {s['id']}",
+                    (t["id"], s["id"]),
+                ))
+                break
+
+    # TEXT_EXCEEDS_CONTAINER
+    for t in bound_text:
+        cid = t.get("containerId")
+        parent = by_id.get(cid) if cid else None
+        if not parent:
+            continue
+        tw, th = float(t.get("width", 0)), float(t.get("height", 0))
+        pw, ph = float(parent.get("width", 0)), float(parent.get("height", 0))
+        if tw > pw + 1 or th > ph + 1:
+            findings.append(Finding(
+                "WARN", "TEXT_EXCEEDS_CONTAINER",
+                f"text {t['id']} ({tw:.0f}x{th:.0f}) larger than "
+                f"container {cid} ({pw:.0f}x{ph:.0f})",
+                (t["id"], cid or ""),
+            ))
+
+    # TITLE_FONT_TOO_SMALL
+    title_cands = [t for t in free_text
+                   if float(t.get("fontSize", 0) or 0) >= TITLE_FS_MIN]
+    body_cands = [t for t in bound_text
+                  if float(t.get("fontSize", 0) or 0) > 0]
+    if title_cands and body_cands:
+        title_fs = max(float(t.get("fontSize", 0)) for t in title_cands)
+        body_fs = median([float(t.get("fontSize", 0)) for t in body_cands])
+        if title_fs < body_fs + 8:
+            findings.append(Finding(
+                "WARN", "TITLE_FONT_TOO_SMALL",
+                f"title font {title_fs:.0f} not >= body {body_fs:.0f}+8",
+                (),
+            ))
+
+    # PALETTE_OVERUSED
+    fills = [e.get("backgroundColor") for e in shapes
+             if e.get("backgroundColor")
+             and e.get("backgroundColor") not in ("transparent", "")]
+    distinct = {f.lower() for f in fills if f}
+    cap = RUBRIC_TARGETS["max_distinct_fills"]
+    if len(distinct) > cap:
+        findings.append(Finding(
+            "INFO", "PALETTE_OVERUSED",
+            f"{len(distinct)} distinct fills (cap {cap}): "
+            f"{sorted(distinct)}",
+            (),
+        ))
+
+    # ANNOTATION_TOO_SMALL — free-text annotations under 11pt are illegible
+    # at the typical render scale. 12 is the rubric default; 11 leaves room.
+    for t in free_text:
+        fs = float(t.get("fontSize", 0) or 0)
+        if 0 < fs < 11:
+            findings.append(Finding(
+                "WARN", "ANNOTATION_TOO_SMALL",
+                f"text {t['id']} font {fs:.0f}pt < 11pt floor",
+                (t["id"],),
+            ))
+
     return findings
 
 
@@ -585,6 +793,7 @@ def check_all(filepath: Path) -> ValidationReport:
     rep.findings.extend(check_hierarchy(elements))
     rep.findings.extend(check_argument(elements))
     rep.findings.extend(check_title(elements))
+    rep.findings.extend(check_aesthetics(elements))
     if data.get("source") is None:
         rep.findings.append(Finding("WARN", "SOURCE_MISSING",
                                     "top-level `source` field absent", ()))

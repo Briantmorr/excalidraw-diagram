@@ -95,6 +95,7 @@ def _cmd_pattern(args: argparse.Namespace) -> int:
         return 1
     kwargs = _patterns._coerce_kwargs(fn, spec)
     result = fn(Path(args.file), **kwargs)
+    _patterns.recenter_titles(Path(args.file))
     if result is not None:
         print(result)
     return 0
@@ -314,6 +315,25 @@ def _cmd_sketch(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# compose
+# ---------------------------------------------------------------------------
+
+def _cmd_compose(args: argparse.Namespace) -> int:
+    from helpers.patterns import ComposeStep, compose
+    raw = json.loads(args.spec)
+    if not isinstance(raw, list):
+        print("ERROR: compose spec must be a JSON array", file=sys.stderr)
+        return 1
+    steps = [
+        ComposeStep(pattern=item["pattern"], spec=item.get("spec", {}))
+        for item in raw
+    ]
+    compose(Path(args.file), steps)
+    print(f"OK: composed {len(steps)} patterns -> {args.file}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # bench
 # ---------------------------------------------------------------------------
 
@@ -477,6 +497,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("dir")
     sp.add_argument("-o", "--output", help="bench-report.json path")
     sp.set_defaults(func=_cmd_bench)
+
+    sp = sub.add_parser("compose", help="stack multiple patterns vertically on one canvas")
+    sp.add_argument("file")
+    sp.add_argument("spec", help='JSON array of {"pattern":..,"spec":{..}}')
+    sp.set_defaults(func=_cmd_compose)
 
     return p
 

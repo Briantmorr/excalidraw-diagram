@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from helpers.core import recenter_text, text_width
+from helpers.core import PALETTE, recenter_text, text_width
 
 LINE_HEIGHT: float = 1.25
 ALIASES: dict[str, str] = {
@@ -18,6 +18,16 @@ ALIASES: dict[str, str] = {
     "font_size": "fontSize",
 }
 GEOMETRY_KEYS: frozenset[str] = frozenset({"x", "y", "width", "height"})
+COLOR_KEYS: frozenset[str] = frozenset({"backgroundColor", "strokeColor"})
+
+
+def _resolve_color(value: str) -> str:
+    """Map palette names ('cyan', 'blue') to hex; pass hex / 'transparent' through."""
+    if not isinstance(value, str):
+        return value
+    if value in PALETTE:
+        return PALETTE[value]
+    return value
 
 
 @dataclass
@@ -52,6 +62,8 @@ class PatchSpec:
                 out[key] = float(v)
             elif key == "strokeWidth":
                 out[key] = int(v)
+            elif key in COLOR_KEYS:
+                out[key] = _resolve_color(v)
             else:
                 out[key] = v
         return out

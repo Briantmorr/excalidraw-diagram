@@ -15,7 +15,7 @@ if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
 from helpers.core import (  # noqa: E402
-    BORDER_COLOR, DEFAULT_FONT_FAMILY,
+    BORDER_COLOR, DEFAULT_FONT_FAMILY, PALETTE,
     ROLE_PRESETS, SHAPE_DEFAULTS, TEXT_BODY, TEXT_DEFAULTS,
     TEXT_SUBORDINATE, Bounds, appstate_defaults, detect_frames, frac_index,
     gen_nonce, gen_seed, get_element_bounds, next_index, now_ms,
@@ -339,13 +339,19 @@ def _resolve_defaults(spec: PlaceSpec) -> _Resolved:
     fs = spec.font_size or spec.text_size or 16
     is_text = spec.type == "text"
     td = _TYPE_DEFAULT_SIZE.get(spec.type, (160, 60))
+    bg = spec.bg or "transparent"
+    if isinstance(bg, str) and bg in PALETTE:
+        bg = PALETTE[bg]
+    stroke = spec.stroke or BORDER_COLOR
+    if isinstance(stroke, str) and stroke in PALETTE:
+        stroke = PALETTE[stroke]
     return _Resolved(
         id=spec.id, type=spec.type, text=spec.text,
         x=float(spec.x or 0.0), y=float(spec.y or 0.0),
         width=float(spec.width if spec.width is not None else (0 if is_text else td[0])),
         height=float(spec.height if spec.height is not None else (0 if is_text else td[1])),
-        bg=spec.bg or "transparent",
-        stroke=spec.stroke or BORDER_COLOR,
+        bg=bg,
+        stroke=stroke,
         stroke_width=int(spec.stroke_width if spec.stroke_width is not None else 2),
         font_size=int(fs), text_color=text_color,
     )

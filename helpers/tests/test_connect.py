@@ -19,6 +19,7 @@ from helpers.connect import (  # noqa: E402
     connect_batch,
     detect_crossing,
 )
+from helpers.core import EDGE_GAP, shape_edge_point  # noqa: E402
 
 
 def _shape(eid: str, x: float, y: float, w: float = 100, h: float = 60) -> dict:
@@ -135,21 +136,45 @@ class TestConnect(unittest.TestCase):
         self.assertEqual(idxs, sorted(idxs))
 
     def test_compute_edge_point_geometry_bias(self) -> None:
-        # dy > 2*dx → vertical face from source.
+        # dy > 2*dx → vertical face from source. Auto-side points sit on the
+        # true outline offset OUTWARD by EDGE_GAP, so bottom edge 60 → 66.
         a = _shape("a", 0, 0, w=100, h=60)
         b = _shape("b", 0, 400, w=100, h=60)
         x, y, side = compute_edge_point(a, b, None, is_source=True)
         self.assertEqual(side, "bottom")
-        self.assertEqual(y, 60)  # bottom edge of a
-        # dx > dy → horizontal face.
+        self.assertEqual(x, 50)          # centered on the vertical spine
+        self.assertEqual(y, 60 + EDGE_GAP)
+        # dx > dy → horizontal face; right edge 100 → offset outward by EDGE_GAP.
         c = _shape("c", 500, 0, w=100, h=60)
         x, y, side = compute_edge_point(a, c, None, is_source=True)
         self.assertEqual(side, "right")
-        self.assertEqual(x, 100)
-        # Forced side overrides.
+        self.assertEqual(x, 100 + EDGE_GAP)
+        # Forced side overrides face selection; also offset outward by EDGE_GAP.
         x, y, side = compute_edge_point(a, c, "top", is_source=True)
         self.assertEqual(side, "top")
-        self.assertEqual(y, 0)
+        self.assertEqual(y, 0 - EDGE_GAP)
+
+    def test_shape_edge_point_ellipse_and_diamond(self) -> None:
+        # Ellipse centered at (100,100), semi-axes 100x50. A ray straight down
+        # exits the curve at the bottom vertex (100, 150), offset outward by GAP.
+        ell = {"type": "ellipse", "id": "e", "x": 0, "y": 50,
+               "width": 200, "height": 100}
+        x, y = shape_edge_point(ell, (100, 400))
+        self.assertAlmostEqual(x, 100, places=6)
+        self.assertAlmostEqual(y, 150 + EDGE_GAP, places=6)
+        # A 45-degree ray must land on the ellipse curve, strictly inside the
+        # bbox corner (the old bbox-midpoint logic would have overshot).
+        x, y = shape_edge_point(ell, (100 + 1000, 100 + 1000))
+        self.assertLess(x, 200)   # inside right bbox edge
+        self.assertLess(y, 150)   # inside bottom bbox edge
+        self.assertGreater(x, 100)
+        self.assertGreater(y, 100)
+        # Diamond |x/hw|+|y/hh|=1: ray down exits bottom tip (100,150)+gap.
+        dia = {"type": "diamond", "id": "d", "x": 0, "y": 50,
+               "width": 200, "height": 100}
+        x, y = shape_edge_point(dia, (100, 400))
+        self.assertAlmostEqual(x, 100, places=6)
+        self.assertAlmostEqual(y, 150 + EDGE_GAP, places=6)
 
     def test_detect_crossing_excludes_endpoints(self) -> None:
         a = _shape("a", 0, 0)
@@ -165,6 +190,30 @@ class TestConnect(unittest.TestCase):
         f = _write(self.tmp, [_shape("a", 0, 0), _shape("b", 300, 0)])
         r = connect(f, [ConnectSpec(from_id="a", to_id="b", force_elbow=True)])
         self.assertTrue(r.created[0].elbowed)
+
+
+class NormalizeLabelTests(unittest.TestCase):
+    def test_strips_separator_segment(self) -> None:
+        from helpers.connect import normalize_label
+        self.assertEqual(normalize_label("Yes / Gold"), "Yes")
+        self.assertEqual(normalize_label("yes,gold"), "yes")
+        self.assertEqual(normalize_label("yes; gold"), "yes")
+        self.assertEqual(normalize_label("yes - gold"), "yes")
+
+    def test_truncates_to_eight_chars(self) -> None:
+        from helpers.connect import normalize_label
+        self.assertEqual(normalize_label("approved!"), "approved")
+        self.assertIsNotNone(normalize_label("ok"))
+
+    def test_handles_empty_and_none(self) -> None:
+        from helpers.connect import normalize_label
+        self.assertIsNone(normalize_label(None))
+        self.assertIsNone(normalize_label(""))
+        self.assertIsNone(normalize_label("   "))
+
+    def test_connectspec_normalises_in_post_init(self) -> None:
+        spec = ConnectSpec(from_id="a", to_id="b", label="Yes / Gold")
+        self.assertEqual(spec.label, "Yes")
 
 
 if __name__ == "__main__":

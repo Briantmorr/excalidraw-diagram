@@ -111,7 +111,7 @@ class TestEmitText(unittest.TestCase):
 class TestBindings(unittest.TestCase):
     def test_safe_binding_simple_form(self) -> None:
         b = core.SAFE_BINDING("rect_1")
-        self.assertEqual(b, {"elementId": "rect_1", "focus": 0.5, "gap": 8})
+        self.assertEqual(b, {"elementId": "rect_1", "focus": 0.5, "gap": 1})
         self.assertNotIn("fixedPoint", b)
         self.assertNotIn("mode", b)
 

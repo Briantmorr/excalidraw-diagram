@@ -22,6 +22,7 @@ PALETTE: dict[str, str] = {
     "red": "#ffd4d0",
     "cream": "#fff4e0",
     "silver": "#f1f3f5",
+    "cyan": "#d3f9f9",
     "charcoal_arrow": ARROW_COLOR,
     "black_border": BORDER_COLOR,
     "body_text": TEXT_BODY,
@@ -164,7 +165,13 @@ def text_height(lines: int, fs: int | float) -> float:
     return lines * fs * 1.25
 
 
-def SAFE_BINDING(element_id: str, focus: float = 0.5, gap: int = 8) -> dict[str, Any]:
+# gap=1 (not 8): the arrow's own endpoints are already snapped to the shape
+# outline via shape_edge_point(EDGE_GAP). Excalidraw's binding gap insets the
+# *rendered* endpoint on top of that geometry, so a large gap double-insets and
+# the arrow visibly floats short of the box — worst when stage spacing is tight
+# (e.g. pipeline gap_h=25). A hairline gap keeps the arrowhead off the border
+# without detaching it.
+def SAFE_BINDING(element_id: str, focus: float = 0.5, gap: int = 1) -> dict[str, Any]:
     return {"elementId": element_id, "focus": focus, "gap": gap}
 
 
@@ -335,3 +342,73 @@ def recenter_text(
 
 def appstate_defaults() -> dict[str, Any]:
     return {"gridSize": None, "viewBackgroundColor": BG_COLOR, "isBindingEnabled": True}
+
+
+# ---------------------------------------------------------------------------
+# Shape-outline intersection (EA-derived: intersectElementWithLine + GAP)
+# ---------------------------------------------------------------------------
+#
+# v4's compute_edge_point snaps arrow endpoints to bounding-box face midpoints.
+# For ellipses and diamonds that lands the arrow tip in empty space (a bbox
+# corner/edge sits outside the actual curve/slanted side). Excalidraw Automate's
+# connectObjects casts the center-to-center line and intersects the true shape
+# outline (intersectElementWithLine), then insets by GAP=4. We mirror that:
+# a ray from the shape center toward `toward`, clipped to the shape's real
+# outline for rectangle/ellipse/diamond, then pulled back by EDGE_GAP so the
+# arrowhead doesn't kiss the border.
+
+EDGE_GAP: float = 6.0  # px inset between arrow tip and shape outline
+
+
+def _ray_rect(dx: float, dy: float, hw: float, hh: float) -> float:
+    """t>=0 where the ray from the center exits an axis-aligned box with
+    half-extents (hw, hh). Slab method."""
+    tx = hw / abs(dx) if dx else float("inf")
+    ty = hh / abs(dy) if dy else float("inf")
+    return min(tx, ty)
+
+
+def _ray_ellipse(dx: float, dy: float, hw: float, hh: float) -> float:
+    """t>=0 where the ray from the center exits an ellipse with semi-axes
+    (hw, hh). Solves (t*dx/hw)^2 + (t*dy/hh)^2 = 1."""
+    a = (dx / hw) ** 2 + (dy / hh) ** 2 if hw and hh else 0.0
+    return (1.0 / a) ** 0.5 if a > 0 else 0.0
+
+
+def _ray_diamond(dx: float, dy: float, hw: float, hh: float) -> float:
+    """t>=0 where the ray from the center exits a diamond (rhombus) inscribed
+    in the bbox: |x/hw| + |y/hh| = 1."""
+    a = abs(dx) / hw + abs(dy) / hh if hw and hh else 0.0
+    return (1.0 / a) if a > 0 else 0.0
+
+
+def shape_edge_point(
+    el: dict, toward: tuple[float, float], *, gap: float = EDGE_GAP,
+) -> tuple[float, float]:
+    """Point on `el`'s true outline along the ray from its center toward
+    `toward`, offset OUTWARD by `gap` (away from `el`, toward `toward`).
+    Falls back to the bbox for unknown shape types.
+
+    Offsetting outward (not inward) is deliberate: the arrow tail must start
+    on/just outside the source's own outline, not 6px back inside its fill —
+    an inward inset buries the tail under the shape and it reads as detached.
+    Both endpoints then sit in the gap between shapes, symmetric, and the
+    binding's own tiny gap keeps the arrowhead off the border.
+    """
+    b = get_element_bounds(el)
+    cx, cy = b.cx, b.cy
+    hw, hh = b.width / 2, b.height / 2
+    tx, ty = toward
+    dx, dy = tx - cx, ty - cy
+    if dx == 0 and dy == 0:
+        return cx, cy
+    etype = el.get("type", "rectangle")
+    if etype == "ellipse":
+        t = _ray_ellipse(dx, dy, hw, hh)
+    elif etype == "diamond":
+        t = _ray_diamond(dx, dy, hw, hh)
+    else:  # rectangle and anything box-like
+        t = _ray_rect(dx, dy, hw, hh)
+    length = (dx * dx + dy * dy) ** 0.5
+    t_gap = t + gap / length if length else t
+    return cx + dx * t_gap, cy + dy * t_gap
