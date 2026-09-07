@@ -1,9 +1,9 @@
 """High-level diagram patterns built on place + connect primitives.
 
 Each function emits a complete .excalidraw file for a recognised visual rhetoric:
-pipeline, fanout, decision_tree, comparison_grid, weight_map, timeline,
-side_by_side, nested, hub_spoke, storyboard. All use shared rubric targets,
-black borders, gold-median gaps, and the v4 0.62 text bbox ratio.
+pipeline, cycle, fanout, decision_tree, comparison_grid, weight_map, timeline,
+side_by_side, nested, hub_spoke, storyboard, paired_contrast. All use shared
+design constants, black borders, tight gaps, and the 0.62 text bbox ratio.
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ _SKILL_ROOT = _HELPERS.parent
 if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
-from helpers._rubric_targets import (  # noqa: E402
+from helpers.constants import (  # noqa: E402
     DEFAULT_SIZES, PER_PATTERN, RUBRIC_TARGETS, pattern_target,
 )
 from helpers.connect import ConnectResult, ConnectSpec, connect  # noqa: E402
-from helpers.core import PALETTE, ROLE_PRESETS, text_width  # noqa: E402
+from helpers.core import PALETTE, ROLE_PRESETS, emit_free_text, text_width  # noqa: E402
 from helpers.place import Explicit, PlaceResult, PlaceSpec, Role, Row, place  # noqa: E402
 
 TEXT_RATIO: float = RUBRIC_TARGETS["text_bbox_ratio"]
@@ -725,6 +725,100 @@ def storyboard(filepath: Path, *, title: str, panels: list[Panel]) -> None:
         connect(Path(filepath), edges)
 
 
+def _cycle_node(n: Union[str, dict, Spoke], i: int) -> Spoke:
+    if isinstance(n, Spoke):
+        return n
+    if isinstance(n, str):
+        return Spoke(id=f"node_{i}", text=n)
+    return Spoke(id=n.get("id", f"node_{i}"), text=n["text"], bg=n.get("bg"))
+
+
+def cycle(
+    filepath: Path,
+    *,
+    title: str,
+    nodes: list[Union[str, dict, Spoke]],
+    center_label: str | None = None,
+    color: str = "blue",
+    clockwise: bool = True,
+) -> PlaceResult:
+    """N nodes on a ring, arrows closing the loop — argues 'this repeats'.
+
+    Nodes sit on a circle (uniform ellipses); consecutive arrows flow around the
+    ring and the last node closes back to the first. Use for cycles, feedback
+    loops, lifecycles — anything where the argument is that the process returns to
+    its start. A `pipeline` cannot make this argument; it reads as terminating.
+    """
+    norm = [_cycle_node(n, i) for i, n in enumerate(nodes)]
+    n = len(norm)
+    if n < 3:
+        raise ValueError("cycle requires >=3 nodes (a loop needs a triangle "
+                         "minimum; for 2 items use pipeline or side_by_side)")
+    body_fs = RUBRIC_TARGETS["font_size_body"]
+    base_w, node_h = DEFAULT_SIZES["ellipse"]
+    # Ellipses give ~75% of their width to text (corners are unusable). Size every
+    # node to the longest label so nothing spills — uniform across the ring.
+    longest = max(text_width(nd.text, body_fs) for nd in norm)
+    node_w = max(base_w, longest / 0.72 + 24)
+    default_bg = PALETTE.get(color, PALETTE["blue"])
+    title_fs = RUBRIC_TARGETS["font_size_title"]
+    title_y = 20.0
+
+    # Ring radius: adjacent nodes must not touch. The chord between neighbours is
+    # 2*r*sin(pi/n); require it to exceed node_w + gap so boxes clear each other.
+    gap = 50.0
+    sep = node_w + gap
+    radius = max(180.0, sep / (2 * math.sin(math.pi / n)))
+    ring_top = title_y + title_fs * 1.4 + 40.0
+    cx = radius + node_w / 2 + 40.0
+    cy = ring_top + radius + node_h / 2
+
+    # Place nodes clockwise starting at 12 o'clock (-90°).
+    specs: list[PlaceSpec] = []
+    title_w = text_width(title, title_fs)
+    specs.append(PlaceSpec(
+        id="title", type="text", role=Role.TITLE, text=title,
+        anchor=Explicit(x=cx - title_w / 2, y=title_y), font_size=title_fs))
+
+    direction = 1 if clockwise else -1
+    for i, node in enumerate(norm):
+        ang = -math.pi / 2 + direction * (2 * math.pi * i / n)
+        node_cx = cx + radius * math.cos(ang)
+        node_cy = cy + radius * math.sin(ang)
+        specs.append(PlaceSpec(
+            id=node.id, type="ellipse", text=node.text, role=Role.STEP,
+            anchor=Explicit(x=node_cx - node_w / 2, y=node_cy - node_h / 2),
+            width=node_w, height=node_h,
+            bg=node.bg or default_bg,
+            font_size=body_fs))
+
+    if center_label:
+        # Center of the ring is only clear when the loop is wide enough that arrows
+        # skirt the interior. On a tight triangle (n<=4) the chords cross the middle,
+        # so drop the label below the ring as a subtitle instead of over the arrows.
+        cl_fs = body_fs
+        cl_w = text_width(center_label, cl_fs)
+        if n >= 5:
+            cl_x, cl_y = cx - cl_w / 2, cy - cl_fs / 2
+        else:
+            cl_x, cl_y = cx - cl_w / 2, cy + radius + node_h / 2 + 24
+        specs.append(PlaceSpec(
+            id="center", type="text", role=Role.ANNOTATION, text=center_label,
+            anchor=Explicit(x=cl_x, y=cl_y), font_size=cl_fs))
+
+    pres = place(Path(filepath), specs)
+    if not pres.ok:
+        raise RuntimeError(f"place failed: {pres.errors}")
+
+    # Arrows around the ring, last closing back to first. Let auto-routing pick
+    # sides from center-to-center geometry — on a circle each arrow naturally
+    # exits toward its neighbor, tracing the ring rather than crossing it.
+    edges = [ConnectSpec(from_id=norm[i].id, to_id=norm[(i + 1) % n].id)
+             for i in range(n)]
+    connect(Path(filepath), edges)
+    return pres
+
+
 PATTERNS: dict[str, Callable[..., Any]] = {
     "pipeline": pipeline,
     "fanout": fanout,
@@ -737,6 +831,7 @@ PATTERNS: dict[str, Callable[..., Any]] = {
     "hub_spoke": hub_spoke,
     "storyboard": storyboard,
     "paired_contrast": paired_contrast,
+    "cycle": cycle,
 }
 
 
@@ -913,13 +1008,18 @@ def _center_compose_bands(filepath: Path, band_ranges: list[tuple[int, int]]) ->
     filepath.write_text(json.dumps(data, indent="\t"))
 
 
-def compose(filepath: Path, steps: list[ComposeStep]) -> None:
+def compose(filepath: Path, steps: list[ComposeStep],
+            overall_title: str | None = None) -> None:
     """Stack patterns vertically. Each step appends below the previous bottom.
 
     Patterns place themselves at their own preferred top-Y; we measure the
     canvas before/after each call, namespace the new ids, shift them down
     to sit below the previous band, then run a final pass to center every
     band on a shared vertical axis.
+
+    `overall_title` (recommended for synthesis jobs) adds a large canvas-level
+    heading above all panes stating what the whole explanation argues — distinct
+    from, and larger than, each pane's own title.
     """
     path = Path(filepath)
     if path.exists():
@@ -960,7 +1060,41 @@ def compose(filepath: Path, steps: list[ComposeStep]) -> None:
     for start, end in band_ranges:
         _recenter_titles_in_range(elements, start, end)
     path.write_text(json.dumps(data, indent="\t"))
+
+    if overall_title:
+        _add_overall_title(path, overall_title)
     _reorder_shapes_before_arrows(path)
+
+
+def _add_overall_title(filepath: Path, title: str) -> None:
+    """Place a large canvas-level heading above all bands, centered on the
+    shared content axis, and push every existing element down to make room."""
+    data = json.loads(filepath.read_text())
+    elements: list[dict] = data.get("elements", [])
+    live = [e for e in elements if not e.get("isDeleted")]
+    if not live:
+        return
+    fs = RUBRIC_TARGETS["font_size_title"] + 8  # larger than any pane title
+    xs = [float(e.get("x", 0)) for e in live]
+    x2 = [float(e.get("x", 0)) + float(e.get("width", 0) or 0) for e in live]
+    axis = (min(xs) + max(x2)) / 2
+    top = min(float(e.get("y", 0)) for e in live)
+    band_gap = 60.0
+    title_h = fs * 1.25
+    # Push everything down so the heading sits above with a clear gap.
+    shift = band_gap + title_h
+    for e in elements:
+        if "y" in e:
+            e["y"] = float(e["y"]) + shift
+    tw = text_width(title, fs)
+    heading = emit_free_text(
+        title, x=axis - tw / 2, y=top, font_size=fs,
+        color=RUBRIC_TARGETS["text_color_body"], align="center",
+        text_id="overall_title",
+    )
+    heading["index"] = "a00"
+    elements.insert(0, heading)
+    filepath.write_text(json.dumps(data, indent="\t"))
 
 _DC_BY_FIELD: dict[str, type] = {
     "spokes": Spoke,

@@ -10,7 +10,7 @@ from pathlib import Path
 from helpers import validate
 from helpers.patterns import (
     Branch, GridRow, Pair, Panel, Spoke, TimelineItem, WeightedItem,
-    comparison_grid, decision_tree, fanout, hub_spoke, nested, pipeline,
+    comparison_grid, cycle, decision_tree, fanout, hub_spoke, nested, pipeline,
     side_by_side, storyboard, timeline, weight_map,
 )
 
@@ -29,6 +29,60 @@ class PatternsTestCase(unittest.TestCase):
         self.assertEqual(fails, [], msg="\n".join(
             f"{f.code} {f.message}" for f in fails))
         return json.loads(path.read_text())
+
+    def test_cycle_triangle(self) -> None:
+        cycle(self.path, title="TDD repeats the loop",
+              nodes=["Red", "Green", "Refactor"])
+        data = self._assert_no_fails(self.path)
+        ellipses = [e for e in data["elements"] if e["type"] == "ellipse"]
+        arrows = [e for e in data["elements"] if e["type"] == "arrow"]
+        self.assertEqual(len(ellipses), 3)
+        self.assertEqual(len(arrows), 3)  # closes the loop: n arrows for n nodes
+        # No overlaps, no fails — the ring geometry keeps nodes clear.
+        rep = validate.check_all(self.path)
+        self.assertNotIn("HIERARCHY_FLAT", {f.code for f in rep.findings})
+
+    def test_cycle_six_nodes_with_center(self) -> None:
+        cycle(self.path, title="The engineering loop",
+              nodes=["Spec", "Tests", "Build", "Validate", "Review", "Archive"],
+              center_label="Durable Velocity")
+        data = self._assert_no_fails(self.path)
+        arrows = [e for e in data["elements"] if e["type"] == "arrow"]
+        self.assertEqual(len(arrows), 6)
+
+    def test_cycle_rejects_two_nodes(self) -> None:
+        with self.assertRaises(ValueError):
+            cycle(self.path, title="x", nodes=["a", "b"])
+
+    def test_cycle_long_labels_fit(self) -> None:
+        # Nodes auto-size to the longest label; no text should exceed its ellipse.
+        cycle(self.path, title="Loop",
+              nodes=["Red: write a failing test first",
+                     "Green: make it pass", "Refactor: clean up"])
+        rep = validate.check_all(self.path)
+        self.assertNotIn("TEXT_EXCEEDS_CONTAINER", {f.code for f in rep.findings})
+
+    def test_compose_overall_title(self) -> None:
+        from helpers.patterns import ComposeStep, compose
+        compose(self.path, [
+            ComposeStep("pipeline", {"title": "Flow A", "stages": ["x", "y", "z"]}),
+            ComposeStep("decision_tree", {"title": "Choice B", "root": "q?",
+                        "branches": [{"label": "yes", "outcome": "a"},
+                                     {"label": "no", "outcome": "b"}]}),
+        ], overall_title="The whole story")
+        data = self._assert_no_fails(self.path)
+        headings = [e for e in data["elements"]
+                    if e.get("id") == "overall_title"]
+        self.assertEqual(len(headings), 1)
+        h = headings[0]
+        self.assertEqual(h["text"], "The whole story")
+        # Overall title must be larger than any pane title and sit at the top.
+        pane_titles = [e for e in data["elements"]
+                       if e.get("type") == "text" and e.get("id") != "overall_title"
+                       and float(e.get("fontSize", 0)) >= 22]
+        self.assertTrue(all(h["fontSize"] > t["fontSize"] for t in pane_titles))
+        self.assertTrue(all(h["y"] <= float(e.get("y", 0))
+                            for e in data["elements"] if not e.get("isDeleted")))
 
     def test_pipeline_basic(self) -> None:
         pipeline(

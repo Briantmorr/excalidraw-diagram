@@ -8,6 +8,8 @@ from pathlib import Path
 from helpers.validate import (
     Finding,
     ValidationReport,
+    _has_directed_cycle,
+    check_aesthetics,
     check_all,
     check_argument,
     check_collisions,
@@ -300,6 +302,83 @@ class TestTighten(unittest.TestCase):
             self.assertEqual(path.read_text(), before)
         finally:
             path.unlink()
+
+
+class TestDirectedCycle(unittest.TestCase):
+    def test_closed_loop_detected(self) -> None:
+        self.assertTrue(_has_directed_cycle([("a", "b"), ("b", "c"), ("c", "a")]))
+
+    def test_open_chain_not_a_cycle(self) -> None:
+        self.assertFalse(_has_directed_cycle([("a", "b"), ("b", "c")]))
+
+    def test_cycle_shapes_exempt_from_hierarchy_and_argument(self) -> None:
+        # Three uniform ellipses in a closed arrow loop — a cycle. Uniform size and
+        # single shape-type are intentional; neither HIERARCHY_FLAT nor
+        # WEAK_ARGUMENT / NO_SHAPE_VARIETY should fire.
+        els = [
+            _shape("a", 0, 0, 140, 80, type_="ellipse"),
+            _shape("b", 300, 0, 140, 80, type_="ellipse"),
+            _shape("c", 150, 250, 140, 80, type_="ellipse"),
+            _arrow("ar1", "a", "b"), _arrow("ar2", "b", "c"),
+            _arrow("ar3", "c", "a"),
+        ]
+        codes = {f.code for f in check_hierarchy(els)} | {f.code for f in check_argument(els)}
+        self.assertNotIn("HIERARCHY_FLAT", codes)
+        self.assertNotIn("WEAK_ARGUMENT", codes)
+        self.assertNotIn("NO_SHAPE_VARIETY", codes)
+
+
+class TestArrowCrossesText(unittest.TestCase):
+    def test_arrow_through_free_text_fails(self) -> None:
+        # Arrow shaft runs horizontally straight through a free-text annotation.
+        els = [
+            _shape("a", 0, 0, 100, 50),
+            _shape("b", 400, 0, 100, 50),
+            _text("note", 180, 10, "crossed annotation", fs=16),
+            _arrow("ar", "a", "b", x=100, y=25, points=[[0, 0], [300, 0]]),
+        ]
+        codes = {f.code for f in check_aesthetics(els)}
+        self.assertIn("ARROW_CROSSES_TEXT", codes)
+
+    def test_arrow_own_label_not_flagged(self) -> None:
+        # An arrow's own bound label sits on the shaft by design — never a crossing.
+        arrow = _arrow("ar", "a", "b", x=100, y=25, points=[[0, 0], [300, 0]],
+                       boundElements=[{"id": "lbl", "type": "text"}])
+        lbl = _text("lbl", 230, 18, "ok", fs=14, container_id="ar")
+        els = [_shape("a", 0, 0, 100, 50), _shape("b", 400, 0, 100, 50), arrow, lbl]
+        codes = {f.code for f in check_aesthetics(els)}
+        self.assertNotIn("ARROW_CROSSES_TEXT", codes)
+
+
+class TestColorWordInShape(unittest.TestCase):
+    def test_red_label_in_red_box_warns(self) -> None:
+        box = _shape("s", 0, 0, 150, 60, backgroundColor="#ffd4d0")
+        lbl = _text("s_text", 10, 20, "RED: failing test", fs=16, container_id="s")
+        codes = {f.code for f in check_aesthetics([box, lbl])}
+        self.assertIn("COLOR_WORD_IN_SHAPE", codes)
+
+    def test_neutral_label_in_colored_box_ok(self) -> None:
+        box = _shape("s", 0, 0, 150, 60, backgroundColor="#ffd4d0")
+        lbl = _text("s_text", 10, 20, "failing test", fs=16, container_id="s")
+        codes = {f.code for f in check_aesthetics([box, lbl])}
+        self.assertNotIn("COLOR_WORD_IN_SHAPE", codes)
+
+
+class TestTitleOverhangs(unittest.TestCase):
+    def test_runaway_title_warns(self) -> None:
+        # Narrow body (~200px), very long title → juts far past both edges.
+        title = _text("title", 0, 0,
+                      "A very long runaway title that far exceeds the diagram width",
+                      fs=28)
+        els = [_shape("a", 0, 80, 100, 50), _shape("b", 100, 80, 100, 50), title]
+        codes = {f.code for f in check_aesthetics(els)}
+        self.assertIn("TITLE_OVERHANGS", codes)
+
+    def test_normal_title_ok(self) -> None:
+        title = _text("title", 0, 0, "Short title", fs=28)
+        els = [_shape("a", 0, 80, 300, 50), _shape("b", 320, 80, 300, 50), title]
+        codes = {f.code for f in check_aesthetics(els)}
+        self.assertNotIn("TITLE_OVERHANGS", codes)
 
 
 if __name__ == "__main__":

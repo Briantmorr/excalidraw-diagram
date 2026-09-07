@@ -1,0 +1,1 @@
+{"title":"REST and gRPC share the call shape","left_label":"REST","right_label":"gRPC","pairs":[{"left":"POST /users","right":"CreateUser()"},{"left":"GET /users/1","right":"GetUser(id=1)"}]}
