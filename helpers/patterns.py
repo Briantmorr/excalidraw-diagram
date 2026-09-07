@@ -503,16 +503,19 @@ def nested(
     targets = PER_PATTERN.get("nested_container", PER_PATTERN["pipeline"])
     gap_h, gap_v = targets["gap_h"], targets["gap_v"]
     pad, label_band = 40, 44
-    inner_w, inner_h = 160, 60
-    ii_w, ii_h = 100, 40
+    inner_h, ii_h = 60, 40
+    body_fs = RUBRIC_TARGETS["font_size_body"]
+    sub_fs = RUBRIC_TARGETS["font_size_subordinate"]
+    # Size boxes to the widest label so nothing spills (uniform per row).
+    inner_w = max(160, max((text_width(t, body_fs) for t in inner), default=0) + 28)
+    ii_w = max(100, max((text_width(t, sub_fs) for t in (inner_inner or [])),
+                        default=0) + 24)
     n, nn = len(inner), len(inner_inner or [])
     inner_row_w = n * inner_w + max(n - 1, 0) * gap_h
     ii_row_w = nn * ii_w + max(nn - 1, 0) * gap_h if nn else 0
     cont_w = max(inner_row_w, ii_row_w) + 2 * pad
     cont_h = label_band + inner_h + (gap_v + ii_h if nn else 0) + pad
     ox, oy = 80.0, 120.0
-    body_fs = RUBRIC_TARGETS["font_size_body"]
-    sub_fs = RUBRIC_TARGETS["font_size_subordinate"]
     specs: list[PlaceSpec] = [
         PlaceSpec(id="nested_title", type="text", text=title, role=Role.TITLE,
                   anchor=Explicit(x=ox, y=oy - 70),

@@ -126,7 +126,13 @@ def _detect_frames(elements: list[dict]) -> set[str]:
                         and eb[1] <= float(o.get("y", 0))
                         and eb[2] >= float(o.get("x", 0)) + float(o.get("width", 0))
                         and eb[3] >= float(o.get("y", 0)) + float(o.get("height", 0)))
-        if contained > len(others) * 0.5 or e_area > canvas_area * 0.6:
+        # A transparent rectangle that FULLY encloses several shapes is a container
+        # frame — regardless of how many unrelated shapes sit elsewhere on the canvas.
+        # (The old `contained > half of ALL others` test broke under compose: once a
+        # nested band is stacked with 4 other bands, its outer box contains only its
+        # own children, a minority of the whole canvas, so it stopped reading as a
+        # frame and its containment mis-fired as collisions.) Absolute count, not ratio.
+        if contained >= 3 or e_area > canvas_area * 0.6:
             frames.add(e["id"])
     return frames
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from helpers.validate import (
     Finding,
     ValidationReport,
+    _detect_frames,
     _has_directed_cycle,
     check_aesthetics,
     check_all,
@@ -326,6 +327,26 @@ class TestDirectedCycle(unittest.TestCase):
         self.assertNotIn("HIERARCHY_FLAT", codes)
         self.assertNotIn("WEAK_ARGUMENT", codes)
         self.assertNotIn("NO_SHAPE_VARIETY", codes)
+
+
+class TestFrameDetection(unittest.TestCase):
+    def test_container_frame_detected_among_many_unrelated_shapes(self) -> None:
+        # A transparent box fully enclosing 4 children is a frame — even when many
+        # other unrelated shapes sit elsewhere (the compose case that used to break
+        # frame detection and mis-fire containment as collisions).
+        outer = _shape("outer", 0, 0, 500, 200, backgroundColor="transparent")
+        children = [_shape(f"c{i}", 20 + i * 110, 40, 90, 60) for i in range(4)]
+        # 20 unrelated shapes far below, simulating other composed bands.
+        far = [_shape(f"f{i}", 0, 1000 + i * 80, 100, 50) for i in range(20)]
+        frames = _detect_frames([outer, *children, *far])
+        self.assertIn("outer", frames)
+
+    def test_box_enclosing_two_is_not_a_frame(self) -> None:
+        # Enclosing only 2 shapes and small vs canvas: an ordinary grouping, not a frame.
+        outer = _shape("outer", 0, 0, 260, 120, backgroundColor="transparent")
+        kids = [_shape("k0", 20, 30, 90, 50), _shape("k1", 130, 30, 90, 50)]
+        far = [_shape(f"f{i}", 0, 1000 + i * 80, 100, 50) for i in range(20)]
+        self.assertNotIn("outer", _detect_frames([outer, *kids, *far]))
 
 
 class TestArrowCrossesText(unittest.TestCase):

@@ -58,33 +58,57 @@ Run this as: **explore → select 3-5 insights → `compose` them into one canva
 
 ### Diagramming a repo
 
-**Explore.** Find the real code (skip deps/venv/node_modules). Read the orchestrators
-first — a `main`, a `pipeline`, a `controller`, a `StateGraph`, an app factory. Trace
-one path end to end. Note module layout, entry points, and where the LOC concentrates
-(size encodes importance later).
+This mirrors how engineers actually onboard to code they didn't write (README → entry
+points → trace one scenario → data flow → build a model). Explore through those lenses,
+then draw the 3-5 highest-signal ones.
 
-**Select 3-5 panes** (a newcomer's 30-second orientation). The reliable core three:
-1. **The primary flow** — the main data/request path through the system. Almost always
-   the single most useful pane. This is the "controller → service → store" you were asked for.
-2. **The module map** — what nests in what; the package/subsystem boundaries.
-3. **One non-obvious mechanism** — the clever/subtle bit a newcomer would miss (a routing
-   decision, a resolution pass, a retry loop). Skip if the repo has none.
+**Explore, in this order:**
 
-Then add up to two more when the repo earns them: a **second architecture** (many repos
-have two — e.g. a linear ingest pipeline AND a branching agent graph; that contrast is
-itself insight), a **second key flow**, or a **data model**. Order panes so the canvas
-reads as a story: entry/overview first, deep mechanisms last.
+1. **Orient from the README/docs first.** What problem does the repo solve? Why does it
+   exist? This is where the *overall title* comes from — the thesis of the whole canvas is
+   usually the repo's own stated purpose ("X: notes in, graph out, chat on top"). Also skim
+   the package manifest / build files for the stack and the real dependencies.
+2. **Find the entry points.** The catalog: `main()`, CLI commands, HTTP routes/controllers,
+   event handlers, scheduled jobs, the public API, a `StateGraph`/app factory. These are
+   where behavior begins.
+3. **Trace ONE real scenario end-to-end** — a common workflow with visible input→output
+   (ingest a note, place a trade, handle a request). Follow it through validation → core
+   logic → state change → persistence → output. This one trace is the most valuable pane.
+   Pick the *common* path, never a rare edge case.
+4. **Map the data.** What are the core entities/models, and where do they live (store, DB,
+   cache)? "Understand the data, understand the system."
+5. **Note module boundaries and LOC concentration** (size encodes importance later), and
+   glance at **tests** — the most-tested path is usually the core one, and tests reveal
+   intended behavior faster than implementation.
+
+**Anti-trap (from the research): diagram what the code *does*, verified by tracing — not
+what names imply.** A class called `Service` may be orchestration, domain logic, or
+persistence. Don't build a pane from folder/class names alone.
+
+**Select 3-5 panes**, ordered macro→micro so the canvas reads as a story:
+1. **Primary scenario trace** — the one real input→output path (step 3). Almost always the
+   single most useful pane.
+2. **Module / boundary map** — the structural lens: what nests in what, subsystem edges.
+3. **Data shape** — core entities and where they live. Include when the repo is data-centric.
+4. **A second architecture or key flow** — many repos have two (e.g. a linear ingest pipeline
+   AND a branching agent graph; that contrast is itself insight).
+5. **The non-obvious mechanism** — the surprising bit a newcomer would miss (a human gate, an
+   auto-merge, a retry, dead code that's never imported), often found via tests or churn.
+
+Not every repo earns all five — a small script may only warrant 3. Cut ruthlessly; a pane
+that repeats a fact another pane already made (two panes both just listing the modules) is
+waste. **Each pane must carry a distinct fact.**
 
 **What-you-find → pattern:**
 
 | In the code | Argument | Pattern |
 |---|---|---|
-| Orchestrator calling services in sequence | "data flows through these stages" | `pipeline` |
-| Router / dispatcher / StateGraph with conditional branches | "the path depends on this" | `decision_tree` |
+| One scenario traced through ordered stages | "data flows through these stages" | `pipeline` |
+| Router / dispatcher / StateGraph forking on a decision | "the path depends on this" | `decision_tree` |
 | A feedback / retry / refinement loop | "this repeats until done" | `cycle` |
-| `src/` package + subpackages | "these nest inside these" | `nested` |
-| One entry point → many handlers | "this triggers many things" | `fanout` |
-| Competing implementations of one interface | "these differ on these axes" | `comparison_grid` |
+| Package + subpackages, subsystem boundaries | "these nest inside these" | `nested` |
+| One entry point → many handlers | "this dispatches to many" | `fanout` |
+| Competing implementations / strategies of one interface | "these differ on these axes" | `comparison_grid` |
 
 **Encode something real in size** — a stage that's 3× the LOC, a hot path, the blast
 radius of a change. Uniform boxes waste the size channel.
