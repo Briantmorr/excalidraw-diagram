@@ -113,6 +113,15 @@ waste. **Each pane must carry a distinct fact.**
 **Encode something real in size** — a stage that's 3× the LOC, a hot path, the blast
 radius of a change. Uniform boxes waste the size channel.
 
+**Teach the *why*, not just the *what* — annotate the mechanism.** A pane that only
+labels the steps orients; one that explains *why* teaches. Add short free-text callouts
+of the non-obvious rule next to where it happens: "try/finally guarantees this",
+"contextvars, not globals", "same bridge as @app.command", "no import needed". Use the
+pattern's own note channels — `cycle`'s `notes=[...]`, a `center_label`, a pipeline
+stage that names the guarantee — rather than hand-placed coordinates. Keep each callout
+to a few words (a fact, not a sentence); the diagram carries the explanation, so these
+notes are where the teaching lives.
+
 **Compose the panes into one canvas.** One `compose` call, one band per insight:
 ```
 excd compose repo.excalidraw '[
@@ -160,7 +169,7 @@ Argument: "this repeats / returns to its start". Use for feedback loops, lifecyc
 ```
 excd pattern cycle out.excalidraw '{"title":"TDD repeats the discipline loop","nodes":["Red: write failing test","Green: make it pass","Refactor: clean up"],"center_label":"Define correctness first"}'
 ```
-Kwargs: `nodes` (list[str|{text,bg}], ≥3), `center_label` (str, sits centered in the ring for ≥5 nodes, below it for a tight triangle), `color` (palette name), `clockwise` (bool, default true). Don't hand-build a loop with `place`+`connect` — this pattern routes the ring arrows and closes it for you.
+Kwargs: `nodes` (list[str|{text,bg}], ≥3), `center_label` (str headline), `notes` (list[str] — short *mechanism* callouts that teach the why: `["try/finally guarantees pop","contextvars, not globals"]`; stacked in the ring interior for ≥5 nodes, below it for a tight triangle), `color`, `clockwise` (default true). Routes the ring arrows around the loop and closes it for you — don't hand-build a loop with `place`+`connect`.
 
 ### `fanout` — one source, many targets
 Argument: "this triggers many things". Hub left, spokes stacked right with arrows.

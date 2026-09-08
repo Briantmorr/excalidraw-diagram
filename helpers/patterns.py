@@ -742,6 +742,7 @@ def cycle(
     title: str,
     nodes: list[Union[str, dict, Spoke]],
     center_label: str | None = None,
+    notes: list[str] | None = None,
     color: str = "blue",
     clockwise: bool = True,
 ) -> PlaceResult:
@@ -795,29 +796,52 @@ def cycle(
             bg=node.bg or default_bg,
             font_size=body_fs))
 
-    if center_label:
-        # Center of the ring is only clear when the loop is wide enough that arrows
-        # skirt the interior. On a tight triangle (n<=4) the chords cross the middle,
-        # so drop the label below the ring as a subtitle instead of over the arrows.
+    # Teaching callouts: center_label is one headline; notes are short mechanism
+    # facts ("try/finally guarantees pop", "contextvars, not globals"). For a wide
+    # ring (n>=5) the interior is open, so stack them centered inside; for a tight
+    # triangle the chords cross the middle, so stack them below the ring instead.
+    callouts = ([center_label] if center_label else []) + list(notes or [])
+    if callouts:
         cl_fs = body_fs
-        cl_w = text_width(center_label, cl_fs)
-        if n >= 5:
-            cl_x, cl_y = cx - cl_w / 2, cy - cl_fs / 2
-        else:
-            cl_x, cl_y = cx - cl_w / 2, cy + radius + node_h / 2 + 24
-        specs.append(PlaceSpec(
-            id="center", type="text", role=Role.ANNOTATION, text=center_label,
-            anchor=Explicit(x=cl_x, y=cl_y), font_size=cl_fs))
+        line_h = cl_fs + 8
+        inside = n >= 5
+        block_h = line_h * len(callouts)
+        start_y = (cy - block_h / 2) if inside else (cy + radius + node_h / 2 + 24)
+        for k, txt in enumerate(callouts):
+            w = text_width(txt, cl_fs)
+            specs.append(PlaceSpec(
+                id=f"note_{k}", type="text", role=Role.ANNOTATION, text=txt,
+                anchor=Explicit(x=cx - w / 2, y=start_y + k * line_h),
+                font_size=cl_fs))
 
     pres = place(Path(filepath), specs)
     if not pres.ok:
         raise RuntimeError(f"place failed: {pres.errors}")
 
-    # Arrows around the ring, last closing back to first. Let auto-routing pick
-    # sides from center-to-center geometry — on a circle each arrow naturally
-    # exits toward its neighbor, tracing the ring rather than crossing it.
-    edges = [ConnectSpec(from_id=norm[i].id, to_id=norm[(i + 1) % n].id)
-             for i in range(n)]
+    # Arrows around the ring, last closing back to first. Route each explicitly by
+    # the two nodes' clock positions: an arrow exits the side of the source that
+    # faces its successor and enters the facing side of the target. Auto-routing
+    # (center-to-center side pick) elbows across the interior on small rings and
+    # pierces the far node — explicit sides trace the ring cleanly.
+    def _side_for(dx: float, dy: float) -> str:
+        return ("right" if dx > 0 else "left") if abs(dx) >= abs(dy) else \
+               ("bottom" if dy > 0 else "top")
+
+    node_centers: dict[str, tuple[float, float]] = {}
+    for i, node in enumerate(norm):
+        ang = -math.pi / 2 + direction * (2 * math.pi * i / n)
+        node_centers[node.id] = (cx + radius * math.cos(ang),
+                                 cy + radius * math.sin(ang))
+
+    edges = []
+    for i in range(n):
+        a, b = norm[i].id, norm[(i + 1) % n].id
+        ax, ay = node_centers[a]
+        bx, by = node_centers[b]
+        start_side = _side_for(bx - ax, by - ay)
+        end_side = _side_for(ax - bx, ay - by)
+        edges.append(ConnectSpec(from_id=a, to_id=b,
+                                 start_side=start_side, end_side=end_side))
     connect(Path(filepath), edges)
     return pres
 

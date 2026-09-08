@@ -50,6 +50,20 @@ class PatternsTestCase(unittest.TestCase):
         arrows = [e for e in data["elements"] if e["type"] == "arrow"]
         self.assertEqual(len(arrows), 6)
 
+    def test_cycle_notes_render_and_no_crossings(self) -> None:
+        cycle(self.path, title="Loop with mechanism notes",
+              nodes=["push", "dispatch", "pop"],
+              notes=["try/finally guarantees pop", "contextvars, not globals"])
+        data = self._assert_no_fails(self.path)
+        texts = [e.get("text", "") for e in data["elements"] if e["type"] == "text"]
+        self.assertTrue(any("try/finally" in t for t in texts))
+        self.assertTrue(any("contextvars" in t for t in texts))
+        # Explicit ring routing must not pierce a non-endpoint node.
+        rep = validate.check_all(self.path)
+        codes = {f.code for f in rep.findings}
+        self.assertNotIn("ARROW_CROSSES_NON_ENDPOINT", codes)
+        self.assertNotIn("ARROW_CROSSES_TEXT", codes)
+
     def test_cycle_rejects_two_nodes(self) -> None:
         with self.assertRaises(ValueError):
             cycle(self.path, title="x", nodes=["a", "b"])
