@@ -1,0 +1,1 @@
+{"title":"Three failure modes we fixed","panels":[{"caption":"Old: timeout","sketch":""},{"caption":"Mid: retry storm","sketch":""},{"caption":"New: backoff","sketch":""}]}

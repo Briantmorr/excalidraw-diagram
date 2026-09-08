@@ -21,7 +21,7 @@ from helpers.core import (  # noqa: E402
     gen_nonce, gen_seed, get_element_bounds, next_index, now_ms,
     recenter_text, text_height,
 )
-from helpers._rubric_targets import DEFAULT_SIZES  # noqa: E402
+from helpers.constants import DEFAULT_SIZES  # noqa: E402
 
 SOURCE: str = "https://github.com/zsviczian/obsidian-excalidraw-plugin/releases/tag/2.22.3"
 

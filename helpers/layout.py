@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from ._rubric_targets import DEFAULT_SIZES, RUBRIC_TARGETS
+from .constants import DEFAULT_SIZES, RUBRIC_TARGETS
 
 Engine = Literal["dot", "neato", "fdp", "circo"]
 Direction = Literal["DOWN", "RIGHT", "UP", "LEFT"]

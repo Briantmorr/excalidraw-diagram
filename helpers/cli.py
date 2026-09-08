@@ -284,37 +284,6 @@ def _patterns_layout_spec(d: dict[str, Any]) -> GraphSpec:
 
 
 # ---------------------------------------------------------------------------
-# sketch
-# ---------------------------------------------------------------------------
-
-def _cmd_sketch(args: argparse.Namespace) -> int:
-    from helpers.chat2svg_sketch import (
-        run_pipeline, strokes_to_excalidraw, svg_to_strokes,
-    )
-    out_path = Path(args.file)
-    svg = run_pipeline(args.prompt, model=args.model, refine_iter=args.refine,
-                       sketch_style=args.sketch_style, verbose=args.verbose)
-    if args.save_svg:
-        Path(args.save_svg).write_text(svg)
-    strokes = svg_to_strokes(svg)
-
-    if out_path.exists():
-        existing = json.loads(out_path.read_text())
-        idx_offset = len(existing.get("elements", []))
-        scene = strokes_to_excalidraw(strokes, offset_x=args.x, offset_y=args.y,
-                                      scale=args.scale, index_offset=idx_offset)
-        existing.setdefault("elements", []).extend(scene["elements"])
-        existing["source"] = SOURCE
-        out_path.write_text(json.dumps(existing, indent=2))
-    else:
-        scene = strokes_to_excalidraw(strokes, offset_x=args.x, offset_y=args.y,
-                                      scale=args.scale)
-        out_path.write_text(json.dumps(scene, indent=2))
-    print(f"OK: sketched {len(strokes)} strokes -> {out_path}")
-    return 0
-
-
-# ---------------------------------------------------------------------------
 # compose
 # ---------------------------------------------------------------------------
 
@@ -328,7 +297,7 @@ def _cmd_compose(args: argparse.Namespace) -> int:
         ComposeStep(pattern=item["pattern"], spec=item.get("spec", {}))
         for item in raw
     ]
-    compose(Path(args.file), steps)
+    compose(Path(args.file), steps, overall_title=args.title)
     print(f"OK: composed {len(steps)} patterns -> {args.file}")
     return 0
 
@@ -337,48 +306,12 @@ def _cmd_compose(args: argparse.Namespace) -> int:
 # bench
 # ---------------------------------------------------------------------------
 
-def _cmd_bench(args: argparse.Namespace) -> int:
-    root = Path(args.dir)
-    if not root.is_dir():
-        print(f"ERROR: not a directory: {root}", file=sys.stderr)
-        return 1
-    files = sorted(root.glob("*.excalidraw"))
-    if not files:
-        print(f"ERROR: no .excalidraw files in {root}", file=sys.stderr)
-        return 1
-    report: dict[str, Any] = {"dir": str(root), "files": []}
-    for f in files:
-        entry: dict[str, Any] = {"file": f.name}
-        try:
-            png_out = f.with_suffix(".bench.png")
-            res = _render.render(f, png_out, format="png", scale=2.0)
-            entry["render_ms"] = round(res.latency_ms, 1)
-            entry["render_path"] = str(res.path)
-            entry["png_bytes"] = res.bytes_written
-        except Exception as exc:
-            entry["render_error"] = str(exc)
-        try:
-            rep = _validate.check_all(f)
-            entry["fails"] = len(rep.fails)
-            entry["warns"] = len(rep.warns)
-            entry["infos"] = len(rep.infos)
-            entry["score"] = max(0, 100 - 10 * len(rep.fails) - 2 * len(rep.warns))
-            entry["findings"] = [
-                {"severity": fi.severity, "code": fi.code, "message": fi.message,
-                 "ids": list(fi.element_ids)}
-                for fi in rep.findings
-            ]
-        except Exception as exc:
-            entry["check_error"] = str(exc)
-        report["files"].append(entry)
-        print(f"{f.name}: render={entry.get('render_ms', 'ERR')}ms "
-              f"score={entry.get('score', 'ERR')} "
-              f"fails={entry.get('fails', '?')} warns={entry.get('warns', '?')}")
-
-    out_json = Path(args.output) if args.output else root / "bench-report.json"
-    out_json.write_text(json.dumps(report, indent=2))
-    print(f"\nreport: {out_json}")
-    return 0
+def _cmd_metrics(args: argparse.Namespace) -> int:
+    from helpers.metrics import DEFAULT_CORPUS, run_metrics
+    root = Path(args.dir) if args.dir else DEFAULT_CORPUS
+    baseline = Path(args.baseline) if args.baseline else None
+    out = Path(args.output) if args.output else None
+    return run_metrics(root, baseline=baseline, out=out)
 
 
 # ---------------------------------------------------------------------------
@@ -480,27 +413,20 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--direction", default="DOWN", choices=["DOWN", "RIGHT", "UP", "LEFT"])
     sp.set_defaults(func=_cmd_layout)
 
-    sp = sub.add_parser("sketch", help="text -> SVG -> freedraw strokes")
-    sp.add_argument("prompt")
-    sp.add_argument("file")
-    sp.add_argument("--x", type=float, default=50)
-    sp.add_argument("--y", type=float, default=50)
-    sp.add_argument("--scale", type=float, default=1.0)
-    sp.add_argument("--save-svg", dest="save_svg")
-    sp.add_argument("--model", default="claude-sonnet-latest")
-    sp.add_argument("--refine", type=int, default=0)
-    sp.add_argument("--sketch-style", dest="sketch_style", action="store_true")
-    sp.add_argument("-v", "--verbose", action="store_true")
-    sp.set_defaults(func=_cmd_sketch)
-
-    sp = sub.add_parser("bench", help="render+check every .excalidraw in a dir")
-    sp.add_argument("dir")
-    sp.add_argument("-o", "--output", help="bench-report.json path")
-    sp.set_defaults(func=_cmd_bench)
+    sp = sub.add_parser(
+        "metrics",
+        help="mechanical metrics (render ms, validator findings, spec size) over a dir")
+    sp.add_argument("dir", nargs="?", default=None,
+                    help="dir of .excalidraw files (default: bundled fixtures)")
+    sp.add_argument("--baseline", help="prior metrics.json to diff against")
+    sp.add_argument("-o", "--output", help="metrics.json output path")
+    sp.set_defaults(func=_cmd_metrics)
 
     sp = sub.add_parser("compose", help="stack multiple patterns vertically on one canvas")
     sp.add_argument("file")
     sp.add_argument("spec", help='JSON array of {"pattern":..,"spec":{..}}')
+    sp.add_argument("--title", help="overall canvas heading above all panes "
+                    "(recommended for synthesis jobs)")
     sp.set_defaults(func=_cmd_compose)
 
     return p

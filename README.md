@@ -1,6 +1,6 @@
 # excalidraw-diagram
 
-A Claude skill for generating `.excalidraw` files that **argue visually**. Pick a pattern, render, read the PNG, patch what's wrong — the CLI handles the Excalidraw JSON boilerplate so you control only the artistic decisions.
+A Claude skill for generating `.excalidraw` files that **argue visually** — architecture diagrams, system flows, and visualizations of papers or ideas. Pick a pattern, check, ship — the CLI handles the Excalidraw JSON boilerplate so you control only the artistic decisions.
 
 ![Overview of the excalidraw-diagram skill](assets/skill-overview.png)
 
@@ -8,8 +8,8 @@ A Claude skill for generating `.excalidraw` files that **argue visually**. Pick 
 
 ```bash
 excd pattern pipeline out.excalidraw '{"title":"Request flows through 3 layers","stages":["Ingest","Transform","Serve"]}'
-excd render out.excalidraw -o out.png    # then read the PNG
-excd check out.excalidraw                 # structural + aesthetic gates
+excd check out.excalidraw                 # structural gate — must exit 0
+excd render out.excalidraw -o out.png     # optional: render + read the PNG when refining live
 ```
 
 Every subcommand has `--help`.
@@ -21,6 +21,7 @@ Each maps an argument shape to a layout. One JSON spec per call.
 | pattern | argument |
 |---|---|
 | `pipeline` | N sequential stages |
+| `cycle` | a process that loops / repeats |
 | `fanout` | one source, many targets |
 | `decision_tree` | answer depends on a question |
 | `comparison_grid` | X differs from Y on these axes |
@@ -32,7 +33,7 @@ Each maps an argument shape to a layout. One JSON spec per call.
 | `storyboard` | look at these scenes |
 | `paired_contrast` | two truths held in tension |
 
-When no pattern fits: `excd place` (role-based layout), `excd layout` (Graphviz DAGs), or `excd sketch` (text → freedraw).
+When no pattern fits: `excd place` (role-based layout) or `excd layout` (Graphviz DAGs).
 
 ## Architecture
 
@@ -40,12 +41,13 @@ A thin dispatch stack over shared primitives:
 
 - `excd` — bash shim → `helpers/cli.py`
 - `cli.py` — argparse dispatcher, no business logic
-- `patterns.py` — the 11 layouts, built on `place` + `connect`
+- `patterns.py` — the 12 layouts, built on `place` + `connect`
 - `place.py` / `connect.py` — role presets & xy anchoring / arrows & edge points
-- `core.py` — element dicts, palette, geometry
-- `validate.py` / `render.py` — gates / headless PNG via Playwright
+- `core.py` / `constants.py` — element dicts, palette, geometry / design constants (sizes, gaps, colors)
+- `validate.py` / `render.py` — structural gates / headless PNG via Playwright
+- `metrics.py` — mechanical metrics harness (render ms, validator findings, spec size)
 
-See `SKILL.md` for the full pattern catalog, design principles, and the visual review checklist.
+See `SKILL.md` for the full pattern catalog, design principles, and the structural gate.
 
 ## Setup
 

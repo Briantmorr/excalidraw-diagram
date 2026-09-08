@@ -1,13 +1,9 @@
-"""Rubric targets for diagram quality scoring.
+"""Design constants for the diagram patterns.
 
-Empirically calibrated from gold set test_set_v13. BEYOND_GOLD comments mark
-where we deliberately exceed gold defaults for sharper rubric scores.
-
-Wiring status (as of Round 7): GlobalTargets fields are read by patterns.py
-(font_size_*, max_distinct_fills, text_bbox_ratio) and validate.py (color
-constants, font_family). PatternTargets fields gap_h/gap_v/canvas_max are
-read by patterns.py per-pattern. Other fields are documented intent that
-validators may consume in later rounds.
+Font sizes, colors, per-pattern gaps/canvas budgets, and default shape sizes —
+read by patterns.py and place.py on every pattern call, and by validate.py for
+the color/font invariants. These are load-bearing layout constants, not scoring
+knobs; change them only with a rendered before/after in hand.
 """
 
 from __future__ import annotations
@@ -42,8 +38,8 @@ RUBRIC_TARGETS: GlobalTargets = {
     "font_size_body": 16,
     "font_size_subordinate": 14,
     "font_size_annotation": 12,
-    "max_distinct_fills": 5,         # BEYOND_GOLD: gold uses 4-5; cap at 5
-    "text_bbox_ratio": 0.62,         # BEYOND_GOLD: was 0.55, empirically 0.62 fits Excalifont
+    "max_distinct_fills": 5,         # cap at 5 distinct fills
+    "text_bbox_ratio": 0.62,         # empirical: 0.62 fits Excalifont
     "text_color_body": "#0a0a0a",
     "text_color_subordinate": "#868e96",
     "border_color": "#000000",
@@ -53,10 +49,10 @@ RUBRIC_TARGETS: GlobalTargets = {
 }
 
 
-# Per-pattern overrides. Defaults derived from gold; beyond-gold deviations inline.
+# Per-pattern layout overrides (gaps + canvas budget).
 PER_PATTERN: dict[str, PatternTargets] = {
     "pipeline": {
-        "gap_h": 25,                  # BEYOND_GOLD: gold t7 60-80 was loose; lock 25 for tight L→R scan
+        "gap_h": 25,                  # tight L→R scan
         "gap_v": 30,
         "canvas_max": (1100, 200),
     },
@@ -81,7 +77,7 @@ PER_PATTERN: dict[str, PatternTargets] = {
         "canvas_max": (800, 550),
     },
     "timeline": {
-        "gap_h": 200,                 # gold t5 ~90 between shape edges (full step ~340 center-to-center)
+        "gap_h": 200,                 # ~340 center-to-center per step
         "gap_v": 0,
         "canvas_max": (1300, 220),
     },
@@ -105,20 +101,24 @@ PER_PATTERN: dict[str, PatternTargets] = {
         "gap_v": 25,
         "canvas_max": (800, 500),
     },
+    "cycle": {
+        "gap_h": 50,                  # min edge separation between ring neighbours
+        "gap_v": 50,
+        "canvas_max": (760, 760),
+    },
 }
 
 
-# Default shape sizes per role. Body shapes derive from gold medians
-# (rectangle 150x50, ellipse 145x80, diamond 170x120).
+# Default shape sizes per role (body: rectangle 150x50, ellipse 145x80, diamond 170x120).
 DEFAULT_SIZES: dict[str, tuple[int, int]] = {
     "rectangle": (150, 50),
     "ellipse": (145, 80),
     "diamond": (170, 120),
-    "hub_rectangle": (240, 120),     # BEYOND_GOLD: hub default scaled for 3.43 area ratio
+    "hub_rectangle": (240, 120),     # hub scaled for ~3.4x area ratio vs spokes
     "hub_ellipse": (220, 130),
     "spoke_rectangle": (140, 60),
     "spoke_ellipse": (140, 70),
-    "weight_heavy": (220, 130),      # BEYOND_GOLD: weight_map heavy default
+    "weight_heavy": (220, 130),      # weight_map heavy default
     "weight_light": (110, 65),       # area ratio 220*130 / 110*65 = 4.0
 }
 

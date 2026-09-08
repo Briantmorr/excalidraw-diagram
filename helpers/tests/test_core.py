@@ -27,11 +27,11 @@ class TestConstants(unittest.TestCase):
         self.assertTrue(s["isBindingEnabled"])
         self.assertEqual(s["viewBackgroundColor"], "#ffffff")
 
-    def test_rubric_targets_reexport(self) -> None:
-        # RUBRIC_TARGETS lives in helpers._rubric_targets; consumers import it directly.
-        from helpers import _rubric_targets as rt
-        self.assertEqual(rt.RUBRIC_TARGETS["text_bbox_ratio"], 0.62)
-        self.assertIn("pipeline", rt.PER_PATTERN)
+    def test_design_constants_exports(self) -> None:
+        # Design constants live in helpers.constants; consumers import them directly.
+        from helpers import constants as c
+        self.assertEqual(c.RUBRIC_TARGETS["text_bbox_ratio"], 0.62)
+        self.assertIn("pipeline", c.PER_PATTERN)
 
 
 class TestIndices(unittest.TestCase):

@@ -1,14 +1,16 @@
 ---
 name: excalidraw-diagram
-description: Create and edit Excalidraw diagrams that argue visually — using batch helpers to eliminate boilerplate while you control all artistic decisions (positions, sizes, colors, visual hierarchy). Use when user wants to create, modify, or compose .excalidraw files.
+description: Create and edit Excalidraw diagrams that argue visually — architecture diagrams, system flows, and visualizations of papers or ideas. Batch helpers eliminate boilerplate while you control every artistic decision (positions, sizes, colors, hierarchy). Use when the user wants to create, modify, or compose .excalidraw files.
 ---
 
 
 # Excalidraw Diagram
 
-Generate `.excalidraw` files that **argue visually**. Pick a pattern, render, Read the PNG, patch what's wrong. Don't hand-place coordinates unless no pattern fits.
+Generate `.excalidraw` files that **argue visually** — architecture and system diagrams, and visualizations of a paper's or a codebase's core idea. Pick a pattern, generate, check, ship. Don't hand-place coordinates unless no pattern fits.
 
 CLI: `~/.claude/skills/excalidraw-diagram/excd <subcommand> ...` (every subcommand has `--help`).
+
+**Scope:** this skill draws *structured diagrams* — boxes, arrows, grids, hierarchies. It does not draw freehand scenes or hand-sketched metaphors. If a prompt genuinely wants an illustrated scene rather than a diagram, that's out of scope; say so rather than faking it with labeled rectangles.
 
 ---
 
@@ -16,30 +18,131 @@ CLI: `~/.claude/skills/excalidraw-diagram/excd <subcommand> ...` (every subcomma
 
 1. **Read the prompt.** What kind of input is this? See **Input-type heuristics** below — the input shape tells you which pattern family to consider first.
 2. **Plan.** What is the single argument this diagram makes? Write the title in *action voice*: "Pipeline ships in 3 stages", not "Pipeline diagram".
-3. **Pattern.** Match the argument to a pattern below. **Stress test:** if you picked the first pattern that loosely fit and it took <30 seconds to draft, you probably picked the lazy one. Try a second pattern, draft both titles, ask which one would surface a *non-obvious* fact. If neither does, the prompt deserves a custom layout (`excd place`) or sketch mode (`excd sketch`).
+3. **Pattern.** Match the argument to a pattern below. **Stress test:** if you picked the first pattern that loosely fit and it took <30 seconds to draft, you probably picked the lazy one. Try a second pattern, draft both titles, ask which one would surface a *non-obvious* fact. If neither does, the prompt deserves a custom layout (`excd place`).
 4. **Generate.** `excd pattern <name> out.excalidraw '<json-spec>'` — writes the file in one call.
-5. **Render & Inspect.** `excd render out.excalidraw -o out.png` then **Read out.png**. The PNG is your feedback loop; the JSON is not.
-6. **Patch.** `excd patch`, `excd connect`, `excd remove` for surgical fixes. `excd tighten` to grid-snap and compress gaps.
-7. **Gate.** `excd check out.excalidraw` must exit 0. Walk the **Visual review checklist** (Hard gate section) before declaring done.
+5. **Gate.** `excd check out.excalidraw` must exit 0 (see **Hard gate** below).
+
+That's the fast path — deterministic, no vision round-trip. When *you and the user are iterating live* and want the diagram to be genuinely polished (not just correct), add: `excd render out.excalidraw -o out.png`, **Read the PNG**, then `excd patch` / `excd connect` / `excd tighten` for surgical fixes. Reserve that visual loop for live refinement — the structural gate is enough for batch or subagent use.
 
 ### Input-type heuristics
 
 What the prompt is shaped like points to the right pattern family. Don't memorise these — use them as a tie-breaker when stress-testing.
 
 - **Repo / codebase** ("look at this repo, draw…") → start with `fanout` (entry-point dispatching), `nested` (module hierarchy), or `pipeline` (call chain). Encode something *real* in size — LOC, traffic, blast radius. Don't draw a class diagram.
-- **Paper / blog post** ("read this and visualize…") → look for the central tension (X vs Y, before vs after, claim vs counter-claim). `comparison_grid` and `paired_contrast` carry tensions; `weight_map` carries rankings. If the post is *narrative* (short story, parable, walkthrough), reach for sketch mode or `storyboard`.
+- **Paper / blog post** ("read this and visualize…") → look for the central tension (X vs Y, before vs after, claim vs counter-claim). `comparison_grid` and `paired_contrast` carry tensions; `weight_map` carries rankings; `pipeline` carries a mechanism or method's steps.
 - **Daily lesson** ("teach me X with a visual") → think *pedagogically*, not *taxonomically*. The diagram should make the concept stick — formula → concrete instance → iterated rule beats one big tree. Composites of 2-3 small bands often outperform one big shape.
-- **Conversation / journal / transcript** ("visualize this dialogue") → run the **metaphor-extraction pass** below as a *required first step* before picking any pattern. Sketch mode is the default for D-class; only fall back to a pattern if extraction yields nothing. **Preserve speaker labels verbatim** — if the input says `you·`, keep "you" in the output. Don't infer the speaker's name.
 
-#### Metaphor-extraction pass (REQUIRED for D-class prompts)
+---
 
-Before considering any pattern, write down the answers to these three prompts in your reasoning, *out loud*:
+## Synthesis jobs: diagramming a whole repo or paper
 
-1. **Quote the most concrete image** in the conversation. A literal physical thing or action — *"leaning on me as medicine"*, *"a lantern left behind"*, *"standing between two truths"*, *"the bridge is straining"*, *"a closed door"*. Quote the exact words.
-2. **Name the visual it implies.** What would you draw? *"Two figures, one supporting the other on a bridge over dark water."* *"A figure stepping back, leaving a lit lantern behind."* *"A doorway with light on one side, dark on the other."*
-3. **If you have a quoted image AND a drawable visual** → sketch mode is the right tool. Use `excd sketch "<your visual>" out.excalidraw`. Don't fall back to a pattern just because patterns are easier; the metaphor IS the visual argument.
+Some requests aren't "draw this one argument" — they're "look at this repo / read this
+paper and help me understand it." These are **synthesis jobs**: ingest a large source,
+*select* the few arguments worth drawing, then present them as **one cohesive canvas** —
+3-5 stacked panes that read top-to-bottom as a single visual explanation, NOT a scatter
+of separate files. Selection is the hard, high-value part — pick what a newcomer actually
+needs, and never dump a class diagram or a bullet list as boxes.
 
-If extraction yields no clear physical image after honest reading, then fall back to a pattern: `paired_contrast` for held tensions, `timeline` for belief progression, `weight_map` for theme prominence. Patterns are the *fallback*, not the default. The user said "visualize this dialogue" — the dialogue's metaphor is what makes the visualization not just adequate but delightful.
+Run this as: **explore → select 3-5 insights → `compose` them into one canvas → gate**.
+
+- **Selection is autonomous** — you pick the insights using the heuristics below — **unless
+  the user named them** in their request ("show me the auth flow and the data model"), in
+  which case draw exactly those. When autonomous, open your reply with the one-line list of
+  panes you chose so the user can course-correct.
+- **Pane count is adaptive, 3-5.** A small repo gets 3 (primary flow + module map + one
+  mechanism); a big one with multiple subsystems earns up to 5. More than 5 becomes a
+  scroll, not a glance — cut ruthlessly.
+- **Emit ONE file via `compose`**, one band per insight (see the compose example below).
+  Each band is an ordinary pattern; `compose` stacks them, namespaces ids, and centers
+  them on a shared axis. Title each band with its takeaway.
+
+### Diagramming a repo
+
+This mirrors how engineers actually onboard to code they didn't write (README → entry
+points → trace one scenario → data flow → build a model). Explore through those lenses,
+then draw the 3-5 highest-signal ones.
+
+**Explore, in this order:**
+
+1. **Orient from the README/docs first.** What problem does the repo solve? Why does it
+   exist? This is where the *overall title* comes from — the thesis of the whole canvas is
+   usually the repo's own stated purpose ("X: notes in, graph out, chat on top"). Also skim
+   the package manifest / build files for the stack and the real dependencies.
+2. **Find the entry points.** The catalog: `main()`, CLI commands, HTTP routes/controllers,
+   event handlers, scheduled jobs, the public API, a `StateGraph`/app factory. These are
+   where behavior begins.
+3. **Trace ONE real scenario end-to-end** — a common workflow with visible input→output
+   (ingest a note, place a trade, handle a request). Follow it through validation → core
+   logic → state change → persistence → output. This one trace is the most valuable pane.
+   Pick the *common* path, never a rare edge case.
+4. **Map the data.** What are the core entities/models, and where do they live (store, DB,
+   cache)? "Understand the data, understand the system."
+5. **Note module boundaries and LOC concentration** (size encodes importance later), and
+   glance at **tests** — the most-tested path is usually the core one, and tests reveal
+   intended behavior faster than implementation.
+
+**Anti-trap (from the research): diagram what the code *does*, verified by tracing — not
+what names imply.** A class called `Service` may be orchestration, domain logic, or
+persistence. Don't build a pane from folder/class names alone.
+
+**Select 3-5 panes**, ordered macro→micro so the canvas reads as a story:
+1. **Primary scenario trace** — the one real input→output path (step 3). Almost always the
+   single most useful pane.
+2. **Module / boundary map** — the structural lens: what nests in what, subsystem edges.
+3. **Data shape** — core entities and where they live. Include when the repo is data-centric.
+4. **A second architecture or key flow** — many repos have two (e.g. a linear ingest pipeline
+   AND a branching agent graph; that contrast is itself insight).
+5. **The non-obvious mechanism** — the surprising bit a newcomer would miss (a human gate, an
+   auto-merge, a retry, dead code that's never imported), often found via tests or churn.
+
+Not every repo earns all five — a small script may only warrant 3. Cut ruthlessly; a pane
+that repeats a fact another pane already made (two panes both just listing the modules) is
+waste. **Each pane must carry a distinct fact.**
+
+**What-you-find → pattern:**
+
+| In the code | Argument | Pattern |
+|---|---|---|
+| One scenario traced through ordered stages | "data flows through these stages" | `pipeline` |
+| Router / dispatcher / StateGraph forking on a decision | "the path depends on this" | `decision_tree` |
+| A feedback / retry / refinement loop | "this repeats until done" | `cycle` |
+| Package + subpackages, subsystem boundaries | "these nest inside these" | `nested` |
+| One entry point → many handlers | "this dispatches to many" | `fanout` |
+| Competing implementations / strategies of one interface | "these differ on these axes" | `comparison_grid` |
+
+**Encode something real in size** — a stage that's 3× the LOC, a hot path, the blast
+radius of a change. Uniform boxes waste the size channel.
+
+**Teach the *why*, not just the *what* — annotate the mechanism.** A pane that only
+labels the steps orients; one that explains *why* teaches. Add short free-text callouts
+of the non-obvious rule next to where it happens: "try/finally guarantees this",
+"contextvars, not globals", "same bridge as @app.command", "no import needed". Use the
+pattern's own note channels — `cycle`'s `notes=[...]`, a `center_label`, a pipeline
+stage that names the guarantee — rather than hand-placed coordinates. Keep each callout
+to a few words (a fact, not a sentence); the diagram carries the explanation, so these
+notes are where the teaching lives.
+
+**Compose the panes into one canvas.** One `compose` call, one band per insight:
+```
+excd compose repo.excalidraw '[
+  {"pattern":"pipeline","spec":{"title":"Notes flow through extract, store, resolve","stages":["iter_notes","extract","apply_extraction","resolve"]}},
+  {"pattern":"decision_tree","spec":{"title":"Chat routes on intent, pausing for approval","root":"chat: intent?","branches":[{"label":"chat","outcome":"reply, end"},{"label":"build","outcome":"assess: pause"},{"label":"query","outcome":"query: Cypher"}]}},
+  {"pattern":"nested","spec":{"title":"Agent nodes wrap the core modules","outer":"graphiti","inner":["store","extract","resolve","pipeline"],"inner_inner":["chat","assess","query"]}}
+]'
+```
+Then `excd check` the one file and `excd render` it to read the whole explanation at once.
+
+### Diagramming a paper
+
+**Explore.** Read for the *spine*: the central claim, the method that supports it, the
+result that proves it, and the tension it argues against.
+
+**Select 3-5, then `compose` into one canvas** (same as the repo job): (1) **the claim** —
+often a `paired_contrast` or `comparison_grid` (their approach vs the prior one); (2) **the
+method** — usually a `pipeline` or `cycle` (the mechanism's steps); (3) **the result** — a
+`weight_map` or `comparison_grid` if there's a ranking or head-to-head number. Add a
+**setup/tension** pane or a **second result** if the paper earns it. Don't diagram the
+whole paper; diagram its argument, top-to-bottom as one explanation.
 
 ### Lazy-pattern smell check
 
@@ -60,6 +163,13 @@ Argument: "this happens in order". Use for build/deploy/lifecycle flows.
 excd pattern pipeline out.excalidraw '{"title":"Request flows through 3 layers","stages":["Ingest","Transform","Serve"]}'
 ```
 Kwargs: `stages` (list[str], ≥2), `color` (palette name), `orientation` ("horizontal"|"vertical").
+
+### `cycle` — N nodes on a ring, arrows closing the loop
+Argument: "this repeats / returns to its start". Use for feedback loops, lifecycles, TDD/red-green-refactor, any process that cycles. A `pipeline` **cannot** make this argument — it reads as terminating. Needs ≥3 nodes (a loop is a triangle minimum). Nodes auto-size to the longest label.
+```
+excd pattern cycle out.excalidraw '{"title":"TDD repeats the discipline loop","nodes":["Red: write failing test","Green: make it pass","Refactor: clean up"],"center_label":"Define correctness first"}'
+```
+Kwargs: `nodes` (list[str|{text,bg}], ≥3), `center_label` (str headline), `notes` (list[str] — short *mechanism* callouts that teach the why: `["try/finally guarantees pop","contextvars, not globals"]`; stacked in the ring interior for ≥5 nodes, below it for a tight triangle), `color`, `clockwise` (default true). Routes the ring arrows around the loop and closes it for you — don't hand-build a loop with `place`+`connect`.
 
 ### `fanout` — one source, many targets
 Argument: "this triggers many things". Hub left, spokes stacked right with arrows.
@@ -168,11 +278,10 @@ Don't use `side_by_side` here — it pairs rows but draws no arrows, which kills
 | `excd patch file --id X [--x --y --width --height --text --bg --stroke --font-size]` | Mutate one element |
 | `excd remove file --id X` | Delete element + dead bindings |
 | `excd tighten file [--target-bbox WxH] [--snap N]` | Grid-snap, align, compress gaps |
-| `excd check file [--strict]` | All validators (rendering + aesthetic gates) |
+| `excd check file [--strict]` | All validators (structural gates) |
 | `excd render file -o out.png [--svg] [-s scale]` | Headless PNG/SVG |
 | `excd layout file '<dag-spec>'` | Graphviz auto-layout for DAGs |
-| `excd sketch "prompt" file` | Text → SVG → freedraw strokes |
-| `excd bench dir/` | Render+check every .excalidraw in a directory |
+| `excd metrics [dir] [--baseline m.json]` | Mechanical metrics (render ms, validator findings, spec size) over a dir; deltas vs a baseline |
 | `excd compose file '<spec>'` | Stack multiple patterns vertically on one canvas |
 
 Always `--help` a subcommand before guessing. The `--spec` flag on `patch` accepts a JSON array for batch edits.
@@ -210,10 +319,13 @@ The **Visual review checklist** (Hard gate) is the full rubric — title voice, 
 
 - Hand-coded element JSON when a pattern exists. Patterns enforce all rendering invariants — bypassing them risks plugin hangs.
 - Colored borders. Use fills.
+- Naming a shape's fill color in its own label ("RED: ..." in a red box). The fill already carries the color — the word is redundant. `COLOR_WORD_IN_SHAPE` warns on this.
+- Hand-building a loop with `place`+`connect`. Use the `cycle` pattern — it routes the ring and closes it, and won't undersize arrow-label containers.
+- Titles wider than the diagram body. Even perfectly centered, they jut past both edges and read as unbalanced. `TITLE_OVERHANGS` warns; shorten the title or widen the diagram.
 - Identically-sized boxes for non-equal things. Use `weight_map`.
 - Arrows from a node to itself. Skipped silently by `connect` but indicates broken intent.
 - Diagrams without titles, or titles that name the topic instead of the conclusion.
-- Re-rendering without Reading the PNG. The validators are necessary, not sufficient.
+- Faking an illustrated scene with labeled rectangles. This skill draws structured diagrams; a freehand scene is out of scope.
 - Editing `.excalidraw` JSON in a text editor. Use `excd patch`.
 
 ---
@@ -234,53 +346,56 @@ Palette keys (use 2-5 per diagram, never all 9): `grey #eae8e4`, `blue #e7f5ff`,
 
 ---
 
-## Hard gate
+## Hard gate (required, mechanical)
 
 Before declaring done:
 
-1. `excd check file` exits 0.
-2. `excd render file -o file.png` succeeds.
-3. You **Read** `file.png` and walk through the **Visual review checklist** below — *out loud*, in your reasoning, hitting every item. A scan-and-ship pass is not enough; the validators don't see what your eyes do.
-4. If any item fails, patch and re-render. Repeat until the checklist is clean. Then ship.
+1. `excd check file` exits 0 — no FAIL findings.
 
-Don't declare done on a diagram you haven't seen. Don't declare done on a diagram you've only glanced at. The judge is your own eyes; nothing else catches what's visually wrong.
+That's the gate. `check` catches the defects that are actually *wrong*: dangling
+bindings, shapes after arrows, self-loops, arrows crossing non-endpoint shapes,
+text overflowing its container, labels too long, flat hierarchy, bag-of-rectangles.
+It runs in milliseconds, needs no browser, and is deterministic — so it's the gate a
+batch job or a subagent uses too. A file that passes `check` is structurally sound.
 
-### Visual review checklist
+This gate is **not** a taste judgement. It does not score whitespace balance, canvas
+compactness, or whether the abstraction is *insightful* vs merely *adequate*. Those
+are human calls, made by looking — see below.
 
-Walk through each row. Be honest — if you find yourself rationalising why a defect is "fine," it's not fine.
+## Live refinement (optional, visual — only when iterating with the user)
 
-**Argument**
-- *Title:* action voice, states the takeaway in one line, sits at the top, font visibly larger than body.
-- *2-second test:* could a stranger glance at this and explain what it claims in two seconds? If they'd need to read every label, the argument isn't visual.
-- *Isomorphism test:* if you swapped every label for "lorem", would the geometry still tell the story? If yes, good. If no, the layout is leaning on text instead of doing its job.
+When you and the user are polishing a diagram together and want it genuinely good
+(not just correct), render it and look:
 
-**Composition**
-- *Hierarchy:* important things visibly bigger. Hubs > spokes. Outer > inner. Headlines > details. If everything's the same size, the eye gets no anchor — fix it.
-- *Whitespace:* every shape has breathing room. Margins consistent. Nothing crammed against the canvas edge. No band starved while another sprawls.
-- *Alignment:* shapes share grid lines. Rows and columns are visually true. Tighten if drift is visible.
-- *Shape variety:* one shape per role, used consistently. Rectangles for steps, diamonds for decisions, ellipses for endpoints. *Not* every box a rectangle — that's a bag-of-rectangles, not a diagram.
+```
+excd render file -o file.png     # then Read file.png
+```
 
-**Connections**
-- *Arrow endpoints:* every arrow tail and head touches a shape edge cleanly. Arrows ending in whitespace or piercing mid-shape are bugs, not style.
-- *No crossings:* arrows don't cross other arrows or pass *through* non-endpoint shapes. If you have crossings, restructure (widen gaps, reorder rows, switch pattern) — don't ignore.
-- *Edge labels:* one short token max ("Yes", "No", "ok", "fail"). Never multi-segment ("Yes / Gold", "approved by admin"). If you need more info, move it into a node.
-- *Disconnected shapes:* every meaningful shape connects to the argument. Floating orphans signal the layout doesn't actually use them.
+Then patch what your eye catches that the validators can't — these are the things
+worth a human's attention:
 
-**Text**
-- *No overlap:* labels don't overlap shapes (other than their parent), other labels, or arrow shafts.
-- *Fits inside:* container text doesn't spill the box. Free-text annotations don't bleed into neighboring shapes.
-- *Legibility:* nothing tiny, nothing truncated, nothing running off canvas. If you can't read it on first look, neither can anyone else.
-- *Title voice:* action ("Pipeline ships in 3 stages"), not topic ("Pipeline diagram"). Re-write if it's descriptive.
+- *Whitespace:* breathing room even; no band starved while another sprawls.
+- *Hierarchy reads:* the most important thing is visibly the biggest at a glance.
+- *2-second test:* a stranger can say what it claims in two seconds without reading
+  every label. If not, the argument isn't carried by the geometry yet.
+- *Insight vs literal:* did the abstraction surface something the words don't already
+  say? If it's a literal restatement, a different pattern may argue harder.
 
-**Color & style**
-- *Borders:* black `#000000` only. Colored borders are an anti-pattern — color goes in fills.
-- *Fill discipline:* 2-5 palette tokens, never all 9. Each color carries meaning (state, group, weight). If color is decorative, drop it.
-- *Sketch mode:* if the prompt called for a metaphor or scene, you should see freedraw strokes — not labeled rectangles pretending to be a sketch.
+Fix with `excd patch` / `excd connect` / `excd tighten`, re-render, look again. This
+loop costs a vision round-trip per iteration — spend it when a human wants polish,
+skip it for throughput work. It buys the last ~15% of polish, not correctness; the
+validators already own correctness.
 
-**Honesty pass**
-After running the checklist, write one short paragraph stating what you'd want to fix if you had another iteration. If the answer is "nothing," check again — there's almost always one thing. Patch the most impactful one. Then ship.
+## Measuring changes to the skill
 
-If you find ≥3 items failing, you probably picked the wrong pattern. Reconsider abstraction before patching geometry.
+`excd metrics` reports mechanical axes per diagram over a directory — render latency,
+validator FAIL/WARN counts (structural accuracy), spec size (a proxy for how much
+JSON the model had to emit), element count, canvas size. **No composite score** — each
+axis raw, and the only verdict is `clean` (0 FAIL + 0 WARN). Run it against
+`helpers/tests/fixtures/` (the bundled 11-pattern corpus) after changing a pattern or
+a validator; `--baseline metrics.json` prints deltas so a regression shows up as a
+number. It deliberately does not attempt to score taste — that plateaued in past
+attempts and is a human call.
 
 ---
 
@@ -289,4 +404,3 @@ If you find ≥3 items failing, you probably picked the wrong pattern. Reconside
 - Python 3.11+, no extra Python deps for core CLI.
 - `excd render`: needs Playwright (`pip install playwright && playwright install chromium`) — first run downloads the browser.
 - `excd layout`: needs Graphviz (`brew install graphviz`).
-- `excd sketch`: needs `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` env vars (SAP gateway).

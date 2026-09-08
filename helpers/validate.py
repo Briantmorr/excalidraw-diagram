@@ -13,7 +13,7 @@ from pathlib import Path
 from statistics import median
 from typing import Iterable, Literal
 
-from helpers._rubric_targets import RUBRIC_TARGETS
+from helpers.constants import RUBRIC_TARGETS
 
 Severity = Literal["FAIL", "WARN", "INFO"]
 
@@ -126,7 +126,13 @@ def _detect_frames(elements: list[dict]) -> set[str]:
                         and eb[1] <= float(o.get("y", 0))
                         and eb[2] >= float(o.get("x", 0)) + float(o.get("width", 0))
                         and eb[3] >= float(o.get("y", 0)) + float(o.get("height", 0)))
-        if contained > len(others) * 0.5 or e_area > canvas_area * 0.6:
+        # A transparent rectangle that FULLY encloses several shapes is a container
+        # frame — regardless of how many unrelated shapes sit elsewhere on the canvas.
+        # (The old `contained > half of ALL others` test broke under compose: once a
+        # nested band is stacked with 4 other bands, its outer box contains only its
+        # own children, a minority of the whole canvas, so it stopped reading as a
+        # frame and its containment mis-fired as collisions.) Absolute count, not ratio.
+        if contained >= 3 or e_area > canvas_area * 0.6:
             frames.add(e["id"])
     return frames
 
@@ -135,8 +141,13 @@ def check_collisions(elements: list[dict], *, target_id: str | None = None,
                      threshold: float = COLLISION_THRESHOLD,
                      ignore_ids: Iterable[str] | None = None) -> list[Finding]:
     skip = _detect_frames(elements) | set(ignore_ids or [])
+    # Arrows are excluded: their axis-aligned bounding boxes overlap by construction
+    # (siblings fanning from one hub share a tail region; an arrow's bbox always
+    # covers its own endpoint shapes). Arrow geometry is checked precisely by
+    # check_aesthetics via segment intersection, so bbox collision here only mis-fires.
     pool = [e for e in _live(elements)
-            if float(e.get("width", 0)) > 0 and float(e.get("height", 0)) > 0
+            if e.get("type") not in ("arrow", "line")
+            and float(e.get("width", 0)) > 0 and float(e.get("height", 0)) > 0
             and e["id"] not in skip]
     shape_ids = {e["id"] for e in pool if e.get("type") != "text"}
     bound_text = {e["id"] for e in pool
@@ -255,6 +266,10 @@ def check_hierarchy(elements: list[dict]) -> list[Finding]:
     shapes = _meaningful(elements)
     if len(shapes) < 2 or _is_grid(shapes) or _is_uniform_row(shapes):
         return []
+    # A closed arrow loop (cycle diagram) argues through the loop, not size —
+    # uniform nodes are correct there.
+    if _cycle_shapes(elements):
+        return []
     areas = [s.area for s in shapes]
     ratio = max(areas) / min(areas)
     if ratio >= HIERARCHY_RATIO_FLOOR:
@@ -308,6 +323,44 @@ def _arrow_edges(arrows: list[dict], shapes: list[dict]) -> list[tuple[str, str]
     return edges
 
 
+def _has_directed_cycle(edges: list[tuple[str, str]]) -> bool:
+    """True if the directed arrow graph contains a cycle (a closed loop).
+
+    A closed loop is the whole argument of a `cycle` diagram — uniform nodes and
+    flat size hierarchy are intentional there, so the hierarchy/monoculture warns
+    must stand down when this is present."""
+    adj: dict[str, list[str]] = defaultdict(list)
+    for a, b in edges:
+        adj[a].append(b)
+    WHITE, GREY, BLACK = 0, 1, 2
+    color: dict[str, int] = {}
+
+    def visit(u: str) -> bool:
+        color[u] = GREY
+        for v in adj[u]:
+            c = color.get(v, WHITE)
+            if c == GREY:
+                return True
+            if c == WHITE and visit(v):
+                return True
+        color[u] = BLACK
+        return False
+
+    return any(color.get(nid, WHITE) == WHITE and visit(nid)
+               for nid in list(adj))
+
+
+def _cycle_shapes(elements: list[dict]) -> bool:
+    """Do the meaningful shapes form a closed directed arrow loop?"""
+    frames = _detect_frames(elements)
+    shapes = [e for e in _live(elements)
+              if e.get("type") in SHAPE_TYPES
+              and float(e.get("width", 0)) > 0
+              and e["id"] not in frames]
+    arrows = [e for e in _live(elements) if e.get("type") == "arrow"]
+    return _has_directed_cycle(_arrow_edges(arrows, shapes))
+
+
 def _largest_component(node_ids: set[str], edges: list[tuple[str, str]]) -> int:
     if not node_ids:
         return 0
@@ -344,14 +397,32 @@ def check_argument(elements: list[dict]) -> list[Finding]:
     arrows = [e for e in _live(elements) if e.get("type") == "arrow"]
     findings: list[Finding] = []
 
+    # A diagram can argue without shape variety or arrow flow when it argues through
+    # (a) a true grid — ≥2 rows × ≥2 cols (comparison_grid, paired_contrast),
+    # (b) strong size hierarchy — size itself encodes the point (weight_map,
+    #     mirrored side_by_side), or
+    # (c) containment — uniform boxes inside a container/frame argue "these belong
+    #     inside that" (nested).
+    # A bare uniform row/column with none of these is the bag-of-rectangles defect
+    # and still warns.
+    meaningful = _meaningful(elements)
+    edges = _arrow_edges(arrows, shapes_d)
+    areas = [float(s.get("width", 0)) * float(s.get("height", 0)) for s in shapes_d]
+    size_argues = (min(areas) > 0
+                   and max(areas) / min(areas) >= HIERARCHY_RATIO_FLOOR)
+    has_container = bool(frames)
+    # A closed arrow loop is a cycle — the loop is the argument, uniform nodes fine.
+    is_cycle = _has_directed_cycle(edges)
+    argues_without_variety = (_is_grid(meaningful) or size_argues
+                              or has_container or is_cycle)
+
     counts = Counter(s["type"] for s in shapes_d)
     dom_type, dom_n = counts.most_common(1)[0]
     dom_ratio = dom_n / len(shapes_d)
-    edges = _arrow_edges(arrows, shapes_d)
     span = _largest_component({s["id"] for s in shapes_d}, edges)
     no_flow = len(arrows) < 2 or (span / len(shapes_d)) <= 0.5
 
-    if dom_ratio > MONOCULTURE_RATIO and no_flow:
+    if dom_ratio > MONOCULTURE_RATIO and no_flow and not argues_without_variety:
         findings.append(Finding(
             "WARN", "WEAK_ARGUMENT",
             f"{dom_n}/{len(shapes_d)} are {dom_type} ({dom_ratio:.0%}); "
@@ -363,7 +434,7 @@ def check_argument(elements: list[dict]) -> list[Finding]:
     w0, h0 = ws[0], hs[0]
     # Uniform sizes are intentional for pipelines/cycles/timelines (one-shape-per-sequence).
     # Only flag when there's no arrow flow AND no size variation — that's the bag-of-rectangles case.
-    if (not arrows
+    if (not arrows and not argues_without_variety
             and w0 > 0 and h0 > 0
             and all(abs(w - w0) / w0 <= SIZE_TOLERANCE and abs(h - h0) / h0 <= SIZE_TOLERANCE
                     for w, h in zip(ws, hs))):
@@ -683,6 +754,28 @@ def check_aesthetics(elements: list[dict]) -> list[Finding]:
                     ))
                     break  # one report per arrow per offending shape
 
+    # ARROW_CROSSES_TEXT — an arrow shaft slicing through a free-text annotation
+    # (not its own label) is unreadable. Shrink the text bbox slightly so an arrow
+    # merely grazing the edge doesn't trip it; a real crossing cuts the interior.
+    for a in arrows:
+        own_labels = {be["id"] for be in (a.get("boundElements") or [])
+                      if isinstance(be, dict) and be.get("type") == "text"}
+        segs = _arrow_segments(a)
+        for t in free_text:
+            if t["id"] in own_labels:
+                continue
+            tb = _bounds(t)
+            pad_x = (tb[2] - tb[0]) * 0.15
+            pad_y = (tb[3] - tb[1]) * 0.15
+            inner = (tb[0] + pad_x, tb[1] + pad_y, tb[2] - pad_x, tb[3] - pad_y)
+            if any(_seg_hits_rect_strict(p1, p2, inner) for p1, p2 in segs):
+                findings.append(Finding(
+                    "FAIL", "ARROW_CROSSES_TEXT",
+                    f"arrow {a['id']} crosses free-text {t['id']}",
+                    (a["id"], t["id"]),
+                ))
+                break
+
     # ARROW_CROSSES_ARROW
     seen_pairs: set[tuple[str, str]] = set()
     for i, a1 in enumerate(arrows):
@@ -778,6 +871,61 @@ def check_aesthetics(elements: list[dict]) -> list[Finding]:
                 "WARN", "ANNOTATION_TOO_SMALL",
                 f"text {t['id']} font {fs:.0f}pt < 11pt floor",
                 (t["id"],),
+            ))
+
+    # TITLE_OVERHANGS — a title wider than the diagram body reads as off-center
+    # even when perfectly centered, because it juts past both content edges. The
+    # fix is a shorter title or a wider diagram, not re-centering.
+    body_shapes = [e for e in shapes]
+    if body_shapes and title_cands:
+        bx0 = min(_bounds(s)[0] for s in body_shapes)
+        bx2 = max(_bounds(s)[2] for s in body_shapes)
+        body_w = bx2 - bx0
+        title = max(title_cands, key=lambda t: float(t.get("width", 0) or 0))
+        tw = float(title.get("width", 0) or 0)
+        # A centered title jutting well past both body edges reads as unbalanced.
+        # Require both a large ratio AND a large absolute overhang per side, so a
+        # normal title over a naturally-narrow body (a weight_map, a decision root)
+        # doesn't trip — only a genuinely runaway title does.
+        overhang_per_side = (tw - body_w) / 2
+        if body_w > 0 and tw > body_w * 1.6 and overhang_per_side > 200:
+            findings.append(Finding(
+                "WARN", "TITLE_OVERHANGS",
+                f"title {title['id']} ({tw:.0f}px) juts {overhang_per_side:.0f}px "
+                f"past each edge of the diagram body ({body_w:.0f}px) — "
+                f"shorten it or widen the diagram",
+                (title["id"],),
+            ))
+
+    # COLOR_WORD_IN_SHAPE — a shape whose label names its own fill color
+    # ("RED: ..." in a red box) is redundant: the fill already carries the color,
+    # so the word is wasted ink. Encode the distinction in the fill, not the text.
+    color_texts = {
+        "#ffd4d0": {"red"},
+        "#e0f4e8": {"green"},
+        "#d3f9d8": {"green"},   # mint reads as green
+        "#e7f5ff": {"blue"},
+        "#fff9db": {"yellow"},
+    }
+    text_by_container: dict[str, str] = {}
+    for t in bound_text:
+        cid = t.get("containerId")
+        if cid:
+            text_by_container[cid] = (t.get("text") or "")
+    for s in shapes:
+        fill = (s.get("backgroundColor") or "").lower()
+        names = color_texts.get(fill)
+        if not names:
+            continue
+        label = text_by_container.get(s["id"], "").lower()
+        words = set(re.findall(r"[a-z]+", label))
+        if names & words:
+            hit = next(iter(names & words))
+            findings.append(Finding(
+                "WARN", "COLOR_WORD_IN_SHAPE",
+                f"shape {s['id']} label names its own fill color ({hit!r}); "
+                f"redundant — the fill already carries it",
+                (s["id"],),
             ))
 
     return findings
